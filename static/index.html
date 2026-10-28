@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor Calendario Trendy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fbf7f4;--card:#ffffff;--ink:#2a1f24;--muted:#7b6b72;--line:#efe4e6;
+  --brand:#d6336c;--brand-soft:#fde7ef;--ok:#1f9d63;--ok-soft:#e3f6ec;--warn:#c27c0e;--warn-soft:#fdf2dc;
+  --err:#d23b3b;--err-soft:#fde5e5;--info:#3b6fd2;--info-soft:#e6eefc;--test:#7b4fd6;--test-soft:#efe8fd;
+  --log-bg:#1e171b;--log-ink:#eadfe3;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "DM Sans",system-ui,sans-serif}
+.wrap{max-width:1120px;margin:0 auto;padding:20px 16px 60px}
+header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}
+h1 small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;font-weight:600;font-size:13px}
+.pill i{width:8px;height:8px;border-radius:50%;background:currentColor}
+.pill.live{background:var(--ok-soft);color:var(--ok)} .pill.live i{animation:pulse 1.6s infinite}
+.pill.paused{background:var(--warn-soft);color:var(--warn)} .pill.off{background:var(--err-soft);color:var(--err)}
+@keyframes pulse{50%{opacity:.25}}
+.grid{display:grid;gap:14px}
+.stats{grid-template-columns:repeat(4,1fr)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
+.stat b{display:block;font-size:24px;letter-spacing:-.02em}
+.stat span{color:var(--muted);font-size:13px}
+.big{font-family:"JetBrains Mono",monospace}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
+button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:11px 16px;cursor:pointer;transition:transform .1s,opacity .2s}
+button:active{transform:scale(.97)} button:disabled{opacity:.5;cursor:wait}
+.b-brand{background:var(--brand);color:#fff}.b-test{background:var(--test);color:#fff}
+.b-soft{background:var(--brand-soft);color:var(--brand)}.b-ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
+.cols{grid-template-columns:1.6fr 1fr;align-items:start}
+h2{font-size:15px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.log{background:var(--log-bg);color:var(--log-ink);border-radius:12px;height:520px;overflow:auto;padding:10px 12px;font:12.5px/1.55 "JetBrains Mono",monospace}
+.row{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #2c2328;white-space:pre-wrap;word-break:break-word}
+.row time{color:#8d7c84;flex:none}
+.lv{flex:none;font-size:11px;padding:0 6px;border-radius:4px;height:18px;line-height:18px;text-transform:uppercase}
+.lv.check{background:#2d3f63;color:#a9c3ff}.lv.info{background:#33292e;color:#cdbfc5}.lv.debug{background:#2a2a2a;color:#999}
+.lv.warn{background:#5a4214;color:#ffd27a}.lv.error{background:#5c1f1f;color:#ffb0b0}
+.lv.alert{background:#6b1d3b;color:#ffc2d8}.lv.test{background:#3c2a63;color:#d4c2ff}
+.row.alert{background:#3a1726}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:#fff;cursor:pointer;user-select:none}
+.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:10px}
+input[type=number],input[type=text],textarea{width:100%;font:inherit;color:var(--ink);padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-top:4px}
+textarea{min-height:56px;resize:vertical}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tog{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:14px}
+.tog input{width:18px;height:18px;accent-color:var(--brand)}
+fieldset{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 12px}
+legend{font-size:12px;font-weight:700;color:var(--brand);padding:0 4px;text-transform:uppercase;letter-spacing:.04em}
+.prod{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.prod img{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--brand-soft)}
+.prod a{color:var(--brand);font-weight:600;text-decoration:none}
+.tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px}
+.tag.yes{background:var(--ok-soft);color:var(--ok)}.tag.no{background:var(--warn-soft);color:var(--warn)}
+.muted{color:var(--muted);font-size:13px}
+.banner{background:var(--err-soft);color:var(--err);padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:14px;display:none}
+.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;transition:transform .25s;z-index:10;max-width:calc(100% - 32px)}
+.toast.show{transform:translateX(-50%) translateY(0)}
+@media (max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}.cols{grid-template-columns:1fr}.log{height:420px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>🎄 Monitor Calendario de Adviento <small>Trendy Shop · API pública VTEX · alertas por Telegram</small></h1>
+    <span id="pill" class="pill off"><i></i><span>Conectando…</span></span>
+  </header>
+
+  <div id="bannerTg" class="banner">⚠️ Telegram no está configurado: define TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en el servidor.</div>
+  <div id="bannerPw" class="banner">🔓 El panel no tiene contraseña. Define PANEL_PASSWORD antes de dejarlo en internet.</div>
+
+  <div class="grid stats">
+    <div class="card stat"><span>Próxima revisión en</span><b class="big" id="countdown">—</b><span id="nextDetail" class="muted"></span></div>
+    <div class="card stat"><span>Revisiones hechas</span><b id="checks">0</b><span id="since" class="muted"></span></div>
+    <div class="card stat"><span>Última revisión</span><b id="last" style="font-size:18px">—</b><span id="lastRes" class="muted"></span></div>
+    <div class="card stat"><span>Errores seguidos</span><b id="errs">0</b><span id="mode" class="muted"></span></div>
+  </div>
+
+  <div class="actions">
+    <button class="b-brand" id="btnTest">📨 Probar notificación de Telegram</button>
+    <button class="b-test" id="btnSim">🧪 Simular detección</button>
+    <button class="b-soft" id="btnNow">🔄 Revisar ahora</button>
+    <button class="b-ghost" id="btnPause">⏸ Pausar</button>
+  </div>
+
+  <div class="grid cols">
+    <section class="card">
+      <h2>Registro de actividad en vivo
+        <span class="chips" id="levels"></span>
+      </h2>
+      <div class="log" id="log"></div>
+      <div class="actions" style="margin-bottom:0">
+        <label class="tog" style="margin:0"><input type="checkbox" id="autoscroll" checked> Seguir lo nuevo</label>
+        <button class="b-ghost" id="btnDl">⬇ Descargar</button>
+        <button class="b-ghost" id="btnClear">🗑 Borrar registro</button>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>Detectado en la tienda</h2>
+        <div id="products"><p class="muted">Todavía nada. El monitor sigue buscando.</p></div>
+      </section>
+
+      <section class="card">
+        <h2>Datos para análisis <span class="muted" id="qTotal"></span></h2>
+        <p class="muted" style="margin-top:0">Cada consulta a la tienda queda como una fila: hora, modo, fuente, código HTTP, tiempo de respuesta, productos y stock.</p>
+        <div class="actions" style="margin:8px 0">
+          <button class="b-brand" id="btnXlsx">📊 Descargar Excel</button>
+          <button class="b-ghost" id="btnCsv">⬇ CSV</button>
+          <button class="b-soft" id="btnSync">🔄 Enviar a Sheets</button>
+        </div>
+        <p class="muted" id="sheetsState" style="margin:0"></p>
+        <div id="qTable" style="overflow-x:auto;margin-top:10px"></div>
+      </section>
+
+      <section class="card">
+        <h2>Configuración</h2>
+        <form id="cfg">
+          <fieldset><legend>Ventana de lanzamiento</legend>
+            <label class="tog"><input type="checkbox" name="window_enabled"> Revisar más seguido entre estas fechas</label>
+            <div class="two">
+              <label>Desde<input type="date" name="window_start"></label>
+              <label>Hasta (incluido)<input type="date" name="window_end"></label>
+            </div>
+            <div class="two">
+              <label>Cada mínimo (s)<input type="number" name="window_interval_min_seconds" min="30" max="600"></label>
+              <label>Cada máximo (s)<input type="number" name="window_interval_max_seconds" min="30" max="600"></label>
+            </div>
+            <label>Segundos aleatorios extra (0–120)<input type="number" name="window_jitter_max_seconds" min="0" max="120"></label>
+          </fieldset>
+          <fieldset><legend>Frecuencia fuera de la ventana</legend>
+            <div class="two">
+              <label>Mínimo (min)<input type="number" name="interval_min" min="1" max="60" step="0.5"></label>
+              <label>Máximo (min)<input type="number" name="interval_max" min="1" max="60" step="0.5"></label>
+            </div>
+            <label>Segundos aleatorios extra (0–180)<input type="number" name="jitter_max_seconds" min="0" max="180"></label>
+          </fieldset>
+          <fieldset><legend>Búsqueda</legend>
+            <label>Términos de búsqueda (separados por coma)<textarea name="search_terms"></textarea></label>
+            <label>El nombre debe contener<input type="text" name="required_words"></label>
+            <label>Descartar si contiene<input type="text" name="exclude_words" placeholder="ej: agenda, planner"></label>
+            <label class="tog"><input type="checkbox" name="use_intelligent_search"> Usar también Intelligent Search</label>
+          </fieldset>
+          <fieldset><legend>Alertas</legend>
+            <label class="tog"><input type="checkbox" name="notify_published_without_stock"> Avisar si aparece publicado sin stock</label>
+            <label class="tog"><input type="checkbox" name="turbo_enabled"> Modo turbo al aparecer publicado</label>
+            <div class="two">
+              <label>Turbo cada (s)<input type="number" name="turbo_interval_seconds" min="20" max="300"></label>
+              <label>Turbo durante (min)<input type="number" name="turbo_duration_minutes" min="5" max="1440"></label>
+            </div>
+            <label>Avisos de "disponible" (1–5, cada 20 s)<input type="number" name="alert_repeats" min="1" max="5"></label>
+            <div class="two">
+              <label>"Sigo vivo" cada (h, 0 = no)<input type="number" name="heartbeat_hours" min="0" max="168"></label>
+              <label>Avisar tras N errores<input type="number" name="error_alert_threshold" min="1" max="100"></label>
+            </div>
+          </fieldset>
+          <fieldset><legend>Registro</legend>
+            <label class="tog"><input type="checkbox" name="log_verbose"> Registro detallado (cada consulta)</label>
+            <label>Líneas visibles<input type="number" id="maxLines" min="50" max="1500" value="400"></label>
+          </fieldset>
+          <button class="b-brand" type="submit" style="width:100%">💾 Guardar configuración</button>
+        </form>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const LEVELS = {check:"Revisiones", alert:"Alertas", info:"Info", test:"Pruebas", warn:"Avisos", error:"Errores", debug:"Detalle"};
+const store = {
+  get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
+  set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
+};
+let shown = store.get("levels", Object.keys(LEVELS));
+let maxLines = store.get("maxLines", 400);
+let entries = [], status = null;
+
+function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 3500); }
+async function api(path, opts={}){
+  const r = await fetch(path, {headers:{"Content-Type":"application/json"}, ...opts});
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+
+// ---------- registro
+function renderLevels(){
+  $("#levels").innerHTML = "";
+  for(const [k, label] of Object.entries(LEVELS)){
+    const c = document.createElement("span");
+    c.className = "chip" + (shown.includes(k) ? " on" : "");
+    c.textContent = label;
+    c.onclick = () => { shown = shown.includes(k) ? shown.filter(x=>x!==k) : [...shown, k]; store.set("levels", shown); renderLevels(); renderLog(); };
+    $("#levels").appendChild(c);
+  }
+}
+function rowFor(e){
+  const d = document.createElement("div");
+  d.className = "row " + e.level;
+  const t = document.createElement("time"); t.textContent = e.t.slice(5);
+  const l = document.createElement("span"); l.className = "lv " + e.level; l.textContent = e.level;
+  const m = document.createElement("span"); m.textContent = e.msg;
+  d.append(t, l, m); return d;
+}
+function renderLog(){
+  const box = $("#log"); box.innerHTML = "";
+  entries.filter(e => shown.includes(e.level)).slice(-maxLines).forEach(e => box.appendChild(rowFor(e)));
+  if($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
+}
+function addEntry(e){
+  entries.push(e); if(entries.length > 1500) entries.shift();
+  if(!shown.includes(e.level)) return;
+  const box = $("#log"); box.appendChild(rowFor(e));
+  while(box.children.length > maxLines) box.firstChild.remove();
+  if($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
+}
+
+// ---------- estado
+function renderStatus(s){
+  status = s;
+  const pill = $("#pill");
+  if(s.paused){ pill.className = "pill paused"; pill.lastChild.textContent = "En pausa"; }
+  else if(s.busy){ pill.className = "pill live"; pill.lastChild.textContent = "Consultando la tienda…"; }
+  else { pill.className = "pill live"; pill.lastChild.textContent = {turbo:"Vigilando · TURBO", ventana:"Vigilando · VENTANA DE LANZAMIENTO"}[s.mode] || "Vigilando 24/7"; }
+  $("#btnPause").textContent = s.paused ? "▶ Reanudar" : "⏸ Pausar";
+  $("#checks").textContent = s.checks;
+  $("#since").textContent = "activo desde " + s.started_at;
+  $("#last").textContent = s.last_check_at ? s.last_check_at.slice(11) : "—";
+  $("#lastRes").textContent = s.last_result ? `${s.last_result.analyzed} productos · ${s.last_result.matches} coincidencias` : "";
+  $("#errs").textContent = s.consecutive_errors;
+  $("#mode").textContent = {turbo:"modo turbo activo", ventana:"modo ventana " + (s.window || "")}[s.mode] || ("modo normal" + (s.window ? " · ventana " + s.window : ""));
+  $("#nextDetail").textContent = s.next_detail || "";
+  $("#bannerTg").style.display = s.telegram_ready ? "none" : "block";
+  $("#bannerPw").style.display = s.password_set ? "none" : "block";
+  $("#qTotal").textContent = (s.queries_total || 0).toLocaleString("es-CO") + " filas";
+  const sh = s.sheets || {};
+  $("#sheetsState").textContent = !sh.enabled ? "Google Sheets: no conectado (opcional, ver guía)."
+    : sh.last_error ? `Google Sheets: error «${sh.last_error}» · ${sh.pending} fila(s) en espera, se reintenta sola.`
+    : `Google Sheets: conectado ✔ · ${sh.sent} enviadas en esta sesión · ${sh.pending} en espera · última ${sh.last_ok || "—"}`;
+  $("#btnSync").style.display = sh.enabled ? "" : "none";
+  if (s.checks !== lastChecksSeen) { lastChecksSeen = s.checks; loadQueries(); }
+  const p = $("#products");
+  if(!s.products.length){ p.innerHTML = '<p class="muted">Todavía nada. El monitor sigue buscando.</p>'; return; }
+  p.innerHTML = "";
+  s.products.forEach(x => {
+    const d = document.createElement("div"); d.className = "prod";
+    const img = document.createElement("img"); if(x.image) img.src = x.image; img.alt = "";
+    const info = document.createElement("div");
+    const a = document.createElement("a"); a.href = x.link; a.target = "_blank"; a.rel = "noopener"; a.textContent = x.name;
+    const meta = document.createElement("div"); meta.className = "muted";
+    meta.innerHTML = `<span class="tag ${x.available ? "yes" : "no"}">${x.available ? "CON STOCK" : "SIN STOCK"}</span> visto desde ${x.first_seen}`;
+    info.append(a, meta); d.append(img, info); p.appendChild(d);
+  });
+}
+setInterval(() => {
+  const el = $("#countdown");
+  if(!status || status.paused){ el.textContent = status && status.paused ? "pausa" : "—"; return; }
+  if(status.busy){ el.textContent = "ahora"; return; }
+  if(!status.next_check_ts){ el.textContent = "—"; return; }
+  const s = Math.max(0, Math.round((status.next_check_ts - Date.now())/1000));
+  el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
+}, 500);
+
+// ---------- últimas consultas (vista previa de los datos)
+let lastChecksSeen = null;
+const QCOLS = [["hora_txt","Hora"],["modo","Modo"],["fuente","Fuente"],["http","HTTP"],["ms","ms"],["productos","Prod."],["coincidencias","Coinc."],["con_stock","Stock"]];
+async function loadQueries(){
+  try{
+    const q = await api("/api/queries?limit=8");
+    const idx = Object.fromEntries(q.headers.map((h,i)=>[h,i]));
+    const box = $("#qTable");
+    if(!q.rows.length){ box.innerHTML = '<p class="muted">Aún no hay consultas registradas.</p>'; return; }
+    const t = document.createElement("table");
+    t.style.cssText = "width:100%;border-collapse:collapse;font-size:12px";
+    const hr = t.insertRow();
+    QCOLS.forEach(([,h]) => { const th = document.createElement("th"); th.textContent = h; th.style.cssText = "text-align:left;color:var(--muted);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line)"; hr.appendChild(th); });
+    q.rows.slice().reverse().forEach(r => {
+      const tr = t.insertRow();
+      QCOLS.forEach(([k]) => {
+        const td = tr.insertCell(); td.style.cssText = "padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap";
+        td.textContent = k === "hora_txt" ? r[idx.fecha_hora].slice(11) : r[idx[k]];
+        if(k === "http" && r[idx.ok] === "0") td.style.color = "var(--err)";
+      });
+    });
+    box.innerHTML = ""; box.appendChild(t);
+  }catch(e){}
+}
+$("#btnXlsx").onclick = () => { location.href = "/api/queries/download.xlsx"; };
+$("#btnCsv").onclick = () => { location.href = "/api/queries/download.csv"; };
+$("#btnSync").onclick = async () => {
+  const b = $("#btnSync"); b.disabled = true;
+  try{ const r = await api("/api/queries/sync", {method:"POST"}); toast(r.ok ? `Enviadas ${r.sent} fila(s) a Google Sheets ✔` : "Sheets: " + r.error); }
+  catch(e){ toast("Error: " + e.message); } finally{ b.disabled = false; }
+};
+
+// ---------- conexión en vivo
+function connect(){
+  const es = new EventSource("/api/stream");
+  es.addEventListener("log", ev => addEntry(JSON.parse(ev.data)));
+  es.addEventListener("status", ev => renderStatus(JSON.parse(ev.data)));
+  es.onerror = () => { $("#pill").className = "pill off"; $("#pill").lastChild.textContent = "Reconectando…"; };
+}
+
+// ---------- configuración
+async function loadConfig(){
+  const c = await api("/api/config"); const f = $("#cfg");
+  for(const el of f.elements){
+    if(!el.name || !(el.name in c)) continue;
+    if(el.type === "checkbox") el.checked = !!c[el.name];
+    else el.value = Array.isArray(c[el.name]) ? c[el.name].join(", ") : c[el.name];
+  }
+  $("#maxLines").value = maxLines;
+}
+$("#cfg").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const body = {};
+  for(const el of ev.target.elements){
+    if(!el.name) continue;
+    body[el.name] = el.type === "checkbox" ? el.checked : (el.type === "number" ? Number(el.value) : el.value);
+  }
+  maxLines = Math.max(50, Math.min(1500, Number($("#maxLines").value) || 400)); store.set("maxLines", maxLines); renderLog();
+  try{ await api("/api/config", {method:"POST", body:JSON.stringify(body)}); await loadConfig(); toast("Configuración guardada ✔"); }
+  catch(e){ toast("No se pudo guardar: " + e.message); }
+});
+
+// ---------- botones
+function wire(id, path, okMsg, failMsg){
+  $(id).onclick = async () => {
+    const b = $(id); b.disabled = true;
+    try{ const r = await api(path, {method:"POST"}); toast(r.ok === false ? failMsg : okMsg); }
+    catch(e){ toast("Error: " + e.message); }
+    finally{ b.disabled = false; }
+  };
+}
+wire("#btnTest", "/api/test-telegram", "Mensaje de prueba enviado a Telegram ✔", "Telegram no respondió: revisa el registro");
+wire("#btnSim", "/api/simulate", "Alerta simulada enviada ✔", "La simulación no llegó a Telegram: revisa el registro");
+wire("#btnNow", "/api/check-now", "Revisión en curso…", "");
+$("#btnPause").onclick = async () => { const r = await api("/api/pause", {method:"POST"}); toast(r.paused ? "Monitor en pausa" : "Monitor reanudado"); };
+$("#btnClear").onclick = async () => { if(confirm("¿Borrar todo el registro?")){ await api("/api/logs/clear", {method:"POST"}); entries = []; renderLog(); } };
+$("#btnDl").onclick = () => { location.href = "/api/logs/download"; };
+$("#autoscroll").onchange = renderLog;
+
+(async () => {
+  renderLevels();
+  try{ entries = await api("/api/logs?limit=1500"); renderLog(); renderStatus(await api("/api/status")); await loadConfig(); }
+  catch(e){ toast("No se pudo cargar el panel: " + e.message); }
+  connect();
+})();
+</script>
+</body>
+</html>
