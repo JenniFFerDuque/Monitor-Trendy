@@ -1,126 +1,128 @@
-# 🎄 Monitor del Calendario de Adviento Trendy
+# Monitor Trendy
 
-Vigila la tienda oficial (www.maquillajetrendyshop.com, plataforma VTEX) las 24 horas y te manda a Telegram el link de compra con un botón **🛒 Comprar ahora** apenas el calendario tenga stock. Corre en la nube, así que funciona con tu computador apagado.
+**Sistema de monitoreo en tiempo real que detecta el lanzamiento de un producto de edición limitada y avisa al celular en menos de dos minutos, mientras construye su propio dataset para análisis.**
 
-## Cómo funciona
+Python · FastAPI · asyncio · API REST de VTEX · Telegram Bot API · Docker · Railway · Google Apps Script · Excel
+
+![Panel del monitor](docs/panel.png)
+
+---
+
+## El problema
+
+El Calendario de Adviento de Trendy (tienda colombiana de maquillaje) sale en una fecha no anunciada entre el 10 y el 20 de noviembre y se agota en minutos. Revisar la tienda a mano durante 11 días no es viable.
+
+**La solución:** un servicio en la nube que consulta el catálogo de la tienda las 24 horas, detecta el momento exacto en que el producto aparece con stock y envía una alerta a Telegram con un botón que **abre el checkout con el producto ya en el carrito**. Cada consulta queda registrada como una fila de datos, lo que convierte el monitor en una fuente de datos propia.
+
+## Qué hace
+
+- **Detección en ~1–2 minutos** durante la ventana de lanzamiento, sin intervención humana y con el computador apagado.
+- **Alertas accionables:** nombre, precio, unidades disponibles y un botón *Agregar al carrito y pagar* que usa el enlace oficial de checkout de VTEX.
+- **Tres modos adaptativos** que cambian solos según la fecha y lo que encuentra la tienda (normal, lanzamiento y turbo).
+- **Pipeline de datos:** 20 variables por consulta, exportables a Excel o CSV y sincronizadas con Google Sheets.
+- **Panel web en tiempo real** con cuenta regresiva, registro de actividad en vivo, configuración y botones de prueba de extremo a extremo.
+- **Monitoreo del propio monitor:** latido cada 6 horas, alertas de errores y endpoint de salud.
+
+## Arquitectura
+
+```mermaid
+flowchart LR
+    GH["GitHub"] -->|"despliegue automático"| M
+    subgraph RW["Railway: contenedor Docker 24/7"]
+        M["Monitor asíncrono<br/>app.py"]
+        L["Registro de datos<br/>datalog.py"]
+        P["Panel web<br/>FastAPI + SSE"]
+        V[("Volumen persistente<br/>/data")]
+        M --> L
+        M --> V
+        L --> V
+        P --> M
+    end
+    M <-->|"consulta liviana"| VTEX["API de catálogo VTEX"]
+    M -->|"alerta con botón de compra"| TG["Telegram"]
+    L -->|"lotes cada 5 min"| GS["Google Sheets"]
+    U["Usuaria"] <-->|"HTTPS + autenticación"| P
+```
+
+Cada revisión sigue el mismo ciclo: espera un tiempo aleatorio → elige una consulta → consulta VTEX → registra la fila → decide si encontró el producto y si tiene stock → avisa.
+
+## Decisiones de ingeniería
+
+**Consultar la API, no la página.** La tienda corre sobre VTEX, que expone una API pública de catálogo. Cada consulta descarga 1–5 KB de JSON con el stock exacto (`AvailableQuantity`), en lugar de varios MB de HTML que además se romperían con cualquier rediseño.
+
+**Carga mínima y tráfico de apariencia humana.** Cada revisión hace una sola consulta pequeña, alternando entre dos índices de búsqueda de VTEX. Los intervalos son aleatorios y la identidad del cliente varía. Durante un día completo de lanzamiento el monitor transfiere unos 5 MB, menos que una sola visita de una persona a la tienda.
+
+**Frecuencia adaptativa en tres modos.**
+
+| Modo | Se activa | Intervalo | Objetivo |
+|---|---|---|---|
+| Normal | Fuera de la ventana de lanzamiento | 2–5 min + jitter | Detectar publicaciones anticipadas |
+| Lanzamiento | Entre las fechas configuradas | 50–100 s + jitter | Aviso en ~1–2 min |
+| Turbo | El producto aparece sin stock (3 h) | ~30 s, consulta por ID | Captar la apertura de ventas |
+
+**Concurrencia con asyncio.** Un solo proceso atiende el bucle de monitoreo, el panel en tiempo real, los envíos a Telegram y la sincronización con Sheets sin bloquearse entre sí. Las operaciones costosas (generar un Excel de miles de filas) corren en otro hilo.
+
+**Tiempo real con Server-Sent Events.** El servidor empuja cada evento al panel. Se eligió SSE frente a *polling* (tráfico inútil y retraso) y frente a WebSockets (bidireccionales, innecesarios aquí). La cuenta regresiva corrige el reloj del dispositivo con la hora del servidor.
+
+**Alertas idempotentes.** Cada producto guarda su estado de notificación en disco, así que nunca se repite un aviso, ni siquiera tras un reinicio. Si el producto se agota y lo reponen, el ciclo se reinicia y vuelve a avisar.
+
+**Asistir la compra sin automatizarla.** El botón de la alerta usa el enlace oficial `/checkout/cart/add` de VTEX: abre el carrito en el navegador de la usuaria, con su sesión. El servidor nunca maneja datos de pago y la compra la confirma una persona, como exigen la verificación bancaria y los términos de la tienda.
+
+## Confiabilidad
+
+| Falla | Respuesta del sistema |
+|---|---|
+| Errores de la tienda (403, 429, 5xx) | *Backoff* progresivo con tope y alerta tras 5 errores seguidos; aviso de recuperación |
+| Excepción inesperada en el bucle | Supervisor que lo reinicia en 10 s |
+| Caída del contenedor | Política de reinicio y *healthcheck* en `railway.json` |
+| Falla silenciosa (vivo pero sin revisar) | `/health` responde 503 y deja de llegar el latido de 6 h |
+| Telegram o Google no responden | Reintentos con espera; las filas se encolan sin perderse |
+| Redespliegue | Apagado ordenado que sincroniza lo pendiente antes de salir |
+| Corte a mitad de escritura | Escrituras atómicas (archivo temporal + renombrado) |
+
+Además: autenticación con comparación en tiempo constante, secretos en variables de entorno, límites de memoria en cada cola y escape de HTML en los mensajes.
+
+## El dataset
+
+Cada consulta HTTP a la tienda genera una fila con 20 variables:
+
+| Grupo | Variables |
+|---|---|
+| Tiempo | fecha y hora, fecha, hora del día, día de la semana, segundos desde la consulta anterior |
+| Contexto | número de revisión, motivo, modo |
+| Origen | fuente de VTEX, término consultado |
+| Respuesta | código HTTP, éxito (1/0), latencia (ms), tamaño (KB), error |
+| Resultado | productos devueltos, coincidencias, con stock (1/0), unidades, precio |
+
+El registro maestro es un CSV de solo-anexar. Se exporta a Excel con tipos reales y diccionario de datos, y se sincroniza por lotes con Google Sheets mediante un webhook de Apps Script protegido con token.
+
+**Preguntas que responde:** latencia de la tienda por franja horaria, tasa de error por fuente, cuál índice de VTEX detectó primero el producto, tiempo entre publicación y disponibilidad, y si los intervalos siguen la distribución configurada.
+
+## Estructura
 
 ```
- Servidor en la nube (Railway, 24/7)
- ┌──────────────────────────────────────────────┐
- │  Bucle del monitor                           │
- │   cada 2–5 min + segundos aleatorios ───────────► API pública VTEX de Trendy
- │   (turbo ~1 min si aparece publicado)        │     · catálogo  · intelligent search
- │                    │ detecta                 │
- │                    ▼                         │
- │  Alerta ───────────────────────────────────────► Telegram (tu celular)
- │                                              │
- │  Panel web: registro en vivo, configuración, │
- │  probar Telegram, simular detección          │◄── tú, desde cualquier navegador
- └──────────────────────────────────────────────┘
+├── app.py                   Monitor, lógica de detección, alertas y API del panel
+├── datalog.py               Registro de consultas y exportación (CSV, Excel, Sheets)
+├── static/index.html        Panel web (HTML + JavaScript sin dependencias)
+├── google-sheets/Codigo.gs  Receptor de datos en Google Apps Script
+├── Dockerfile               Imagen de producción
+└── railway.json             Healthcheck y política de reinicio
 ```
 
-- **Una consulta liviana por revisión**: cada revisión pide solo 20 productos y alterna entre el catálogo y la búsqueda inteligente de VTEX. Así se puede revisar más seguido con la misma carga.
-- **Tres modos automáticos** (según la fecha de Bogotá):
-  | Modo | Cuándo | Frecuencia |
-  |---|---|---|
-  | Normal | fuera de la ventana | 2–5 min + 0–45 s al azar |
-  | Ventana | 10 al 20 de noviembre (configurable) | 50–100 s + 0–15 s al azar |
-  | Turbo | el calendario aparece publicado sin stock (3 h) | ~30 s, solo consulta ese producto |
-- **Tráfico natural**: tiempos aleatorios, fuente y orden rotativos, navegador e idioma variables.
-- **Avisos**:
-  - `👀 Publicado (aún sin stock)` → activa el turbo.
-  - `🎄 ¡DISPONIBLE!` → nombre, precio, unidades y botón **Comprar ahora**, repetido 3 veces cada 20 s. Si se agota y reponen, vuelve a avisar.
-  - `💓 Monitor activo` cada 6 h.
-  - `⚠️` si la tienda falla 5 veces seguidas, y `✅` cuando se recupera.
-- **No se detiene**: el bucle se reinicia solo ante cualquier fallo; si la tienda da errores espera un poco más (máx. 4 min en la ventana, 10 min fuera) y reintenta. Configuración, detecciones y registro se guardan en `/data`.
-
-## Puesta en marcha (≈15 minutos)
-
-### 1. Crea el bot de Telegram
-1. En Telegram abre **@BotFather** → `/newbot` → ponle nombre. Copia el **token** (`123456:ABC…`).
-2. Abre el chat con tu bot nuevo y envíale `/start` (sin esto no puede escribirte).
-3. Para tu **chat ID**: abre en el navegador `https://api.telegram.org/bot<TU_TOKEN>/getUpdates` y copia el número de `"chat":{"id": …}`. (Alternativa: escribe a **@userinfobot**.)
-
-### 2. Sube el código a GitHub
-Crea un repositorio **privado** (por ejemplo `trendy-monitor`) y sube esta carpeta tal cual.
-
-### 3. Despliega en Railway (24/7)
-1. Entra a railway.com con tu cuenta de GitHub → **New Project → Deploy from GitHub repo** → elige el repositorio. Detecta el `Dockerfile` solo.
-2. En el servicio → **Variables**, agrega:
-
-   | Variable | Valor |
-   |---|---|
-   | `TELEGRAM_BOT_TOKEN` | el token de BotFather |
-   | `TELEGRAM_CHAT_ID` | tu chat ID |
-   | `PANEL_PASSWORD` | una contraseña para el panel |
-   | `PANEL_USER` | (opcional) usuario, por defecto `admin` |
-   | `PORT` | `8000` |
-
-3. Clic derecho en el servicio → **Attach Volume** → ruta de montaje **`/data`** (aquí se guarda el registro y la configuración).
-4. **Settings → Networking → Generate Domain**. Esa URL es tu panel.
-5. Deja **1 sola réplica** (el monitor vive dentro del servidor; dos réplicas duplicarían avisos).
-
-Costo: el plan Hobby de Railway cuesta 5 USD/mes e incluye 5 USD de uso; un proceso tan pequeño como este normalmente cabe dentro de eso.
-
-### 4. Prueba
-Abre la URL, entra con tu usuario y contraseña y:
-1. **Probar Telegram** → debe llegarte un mensaje.
-2. **Simular alerta** → te llega la alerta completa con el botón de compra (marcada como SIMULACIÓN; no altera nada real).
-3. Mira la pestaña **Actividad**: cada revisión aparece en vivo.
-
-## Panel
-
-- **Cuenta regresiva** al primer día de lanzamiento, con las puertas del 10 al 20 de noviembre. Desde el primer día dice **A la espera** y marca el día actual; si el calendario aparece, muestra **Comprar ahora**.
-- **Estado en una frase**: todo en orden / revisando / en pausa / la tienda no responde, con la próxima revisión.
-- **Actividad**: registro en vivo con filtros (alertas, revisiones, problemas, pruebas), separado por día.
-- **Datos**: descarga en Excel o CSV y estado de Google Sheets.
-- **Ajustes**: fechas, frecuencia y avisos a la vista; búsqueda, turbo y sistema en *Opciones avanzadas*.
-
-> Si aparece un falso positivo (otro producto con "calendario" en el nombre), agrega una palabra en **Ignorar si contiene**.
-
-## Detalles técnicos
-
-- `railway.json`: Railway reinicia el servicio si se cae y usa `/health` para validar cada despliegue.
-- `/health` responde **503** si el monitor lleva demasiado tiempo sin revisar (sirve para un monitor externo gratuito como UptimeRobot).
-- Al apagarse o redesplegar, el servidor recibe la señal correctamente y sube a Sheets las filas pendientes.
-- La descarga de Excel se genera en otro hilo: no frena las revisiones aunque haya miles de filas.
-
-## Alternativas de hosting
-
-- **Gratis**: una VM "Always Free" de Oracle Cloud con Docker (`docker build -t trendy . && docker run -d --restart=always -p 80:8000 -v trendy:/data --env-file .env trendy`). Más pasos, y Oracle puede reclamar instancias que considere inactivas.
-- **No recomendado**: el plan gratis de Render; apaga el servicio tras 15 min sin visitas y borra el disco al reiniciar, así que el monitor se detendría.
-
-## Probar en tu computador
+## Ejecutar localmente
 
 ```bash
 pip install -r requirements.txt
-export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
+export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=... PANEL_PASSWORD=...
 uvicorn app:app --port 8000
-# abre http://localhost:8000
 ```
 
-## Registro de consultas (Excel / Google Sheets)
+Variables opcionales: `SHEETS_WEBHOOK_URL` y `SHEETS_TOKEN` para la sincronización con Google Sheets.
 
-Cada consulta HTTP a la tienda se guarda como una fila en `/data/consultas.csv`. Columnas: fecha y hora, hora del día, día de la semana, revisión, motivo, modo, fuente VTEX, término, código HTTP, éxito, tiempo de respuesta (ms), tamaño (KB), productos devueltos, coincidencias, con stock, unidades, precio, segundos desde la consulta anterior y error.
+## Uso responsable
 
-- **Excel**: panel → *Datos para análisis* → **Descargar Excel** (hoja `Consultas` como tabla con filtros + hoja `Diccionario`).
-- **CSV**: mismo contenido, para pandas / Power BI.
-- **Google Sheets (opcional)**: pega `google-sheets/Codigo.gs` en *Extensiones → Apps Script* de una hoja, cambia `TOKEN`, implementa como *Aplicación web* (ejecutar como yo, acceso: cualquier usuario) y agrega en Railway:
+Proyecto personal y educativo. Solo consulta datos públicos de catálogo, con una carga inferior a la de una visita normal, y no automatiza compras: la decisión y el pago siempre los hace una persona.
 
-  | Variable | Valor |
-  |---|---|
-  | `SHEETS_WEBHOOK_URL` | URL `/exec` de la aplicación web |
-  | `SHEETS_TOKEN` | la misma clave de `TOKEN` |
+---
 
-  Las filas se envían en lote cada 5 min (de inmediato si aparece el calendario). Si Google falla, se guardan y se reintenta.
-
-## Botón «Agregar al carrito y pagar»
-
-Cuando hay stock, la alerta de Telegram trae dos botones:
-
-- **Agregar al carrito y pagar**: usa el enlace oficial de VTEX `/checkout/cart/add?sku=…&qty=…&seller=…&sc=…`. Abre la tienda en tu celular con el calendario ya en el carrito, con tu sesión, y solo confirmas el pago. El monitor nunca toca datos de pago.
-- **Ver producto**: respaldo por si el enlace al carrito falla.
-
-**Simular alerta** usa un producto real con stock de la tienda (marcado como prueba), para comprobar que el enlace al carrito funciona con Trendy. Al probarlo, no pagues: solo verifica que el producto aparezca en el carrito y luego quítalo.
-
-Ajustes: *Avisos → Unidades que agrega el botón del carrito* (1–5) y, en avanzadas, *Canal de venta de VTEX (sc)*, normalmente 1.
+**Jenniffer Duque** · Estudiante de Ingeniería de Software · Análisis de datos · [GitHub](https://github.com/JenniFFerDuque)
