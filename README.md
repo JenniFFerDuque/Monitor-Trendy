@@ -113,3 +113,14 @@ Cada consulta HTTP a la tienda se guarda como una fila en `/data/consultas.csv`.
   | `SHEETS_TOKEN` | la misma clave de `TOKEN` |
 
   Las filas se envían en lote cada 5 min (de inmediato si aparece el calendario). Si Google falla, se guardan y se reintenta.
+
+## Botón «Agregar al carrito y pagar»
+
+Cuando hay stock, la alerta de Telegram trae dos botones:
+
+- **Agregar al carrito y pagar**: usa el enlace oficial de VTEX `/checkout/cart/add?sku=…&qty=…&seller=…&sc=…`. Abre la tienda en tu celular con el calendario ya en el carrito, con tu sesión, y solo confirmas el pago. El monitor nunca toca datos de pago.
+- **Ver producto**: respaldo por si el enlace al carrito falla.
+
+**Simular alerta** usa un producto real con stock de la tienda (marcado como prueba), para comprobar que el enlace al carrito funciona con Trendy. Al probarlo, no pagues: solo verifica que el producto aparezca en el carrito y luego quítalo.
+
+Ajustes: *Avisos → Unidades que agrega el botón del carrito* (1–5) y, en avanzadas, *Canal de venta de VTEX (sc)*, normalmente 1.

@@ -70,6 +70,8 @@ DEFAULT_CONFIG = {
     "turbo_interval_seconds": 30,
     "turbo_duration_minutes": 180,
     "alert_repeats": 3,                # avisos de "disponible" (cada 20 s)
+    "cart_qty": 1,                     # unidades que agrega el botón del carrito
+    "sales_channel": 1,                # canal de venta de VTEX (sc) para el enlace al carrito
     "heartbeat_hours": 6,              # "sigo vivo" (0 = apagado)
     "error_alert_threshold": 5,        # errores seguidos antes de avisar
     "log_verbose": False,
@@ -140,6 +142,8 @@ def sanitize_config(raw: dict, base: dict) -> dict:
     num("turbo_interval_seconds", 20, 300, int)
     num("turbo_duration_minutes", 5, 1440, int)
     num("alert_repeats", 1, 5, int)
+    num("cart_qty", 1, 5, int)
+    num("sales_channel", 1, 99, int)
     num("heartbeat_hours", 0, 168, int)
     num("error_alert_threshold", 1, 100, int)
     for key in ("search_terms", "required_words", "exclude_words"):
@@ -167,14 +171,20 @@ def parse_product(p: dict) -> dict:
         if link.startswith("/"):
             link = STORE + link
     available, qty, price, image = False, 0, None, None
+    sku = seller_id = None      # la variante que se agrega al carrito
     for item in p.get("items") or []:
         if not image and item.get("images"):
             image = item["images"][0].get("imageUrl")
         for seller in item.get("sellers") or []:
             offer = seller.get("commertialOffer") or {}
             q = offer.get("AvailableQuantity") or 0
-            if q > 0 or offer.get("IsAvailable"):
+            in_stock = q > 0 or bool(offer.get("IsAvailable"))
+            if in_stock:
                 available = True
+            # prioriza una variante con stock; si ninguna tiene, se queda con la primera
+            if item.get("itemId") and (sku is None or (in_stock and not sku[1])):
+                sku = (str(item["itemId"]), in_stock)
+                seller_id = str(seller.get("sellerId") or "1")
             qty += q
             pr = offer.get("Price")
             if pr and (price is None or pr < price):
@@ -187,7 +197,16 @@ def parse_product(p: dict) -> dict:
         "qty": qty,
         "price": price,
         "image": image,
+        "sku": sku[0] if sku else None,
+        "seller": seller_id or "1",
     }
+
+
+def cart_link(p: dict, qty: int = 1, sc: int = 1) -> str | None:
+    """Enlace oficial de VTEX que agrega la variante al carrito y abre el checkout en TU navegador."""
+    if not p.get("sku"):
+        return None
+    return f"{STORE}/checkout/cart/add?sku={p['sku']}&qty={qty}&seller={p.get('seller') or 1}&sc={sc}"
 
 
 class Monitor:
@@ -260,6 +279,8 @@ class Monitor:
         cfg = self.config
         products = list(self.state["products"].values())
         live = next((p for p in products if p["available"] and p.get("id") != "simulacion"), None)
+        if live:
+            live = {**live, "cart": cart_link(live, cfg["cart_qty"], cfg["sales_channel"])}
         return {
             "server_now": time.time() * 1000,          # el panel corrige el reloj del celular con esto
             "window_enabled": cfg["window_enabled"],
@@ -455,13 +476,14 @@ class Monitor:
         return "ventana" if self.in_window() else "normal"
 
     # ---------------------------------------------------------------- Telegram
-    async def telegram(self, text: str, button: tuple[str, str] | None = None) -> bool:
+    async def telegram(self, text: str, button: tuple[str, str] | list[tuple[str, str]] | None = None) -> bool:
         if not (TG_TOKEN and TG_CHAT):
             self.log("error", "Telegram no está configurado (faltan TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
             return False
-        payload = {"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML"}
-        if button:
-            payload["reply_markup"] = {"inline_keyboard": [[{"text": button[0], "url": button[1]}]]}
+        payload = {"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
+        buttons = [button] if isinstance(button, tuple) else (button or [])
+        if buttons:  # un botón por fila: más fácil de tocar en el celular
+            payload["reply_markup"] = {"inline_keyboard": [[{"text": t, "url": u}] for t, u in buttons]}
         err = None
         for attempt in range(1, 4):
             try:
@@ -485,23 +507,33 @@ class Monitor:
         self.log("error", f"No se pudo enviar a Telegram: {err}")
         return False
 
+    def buy_buttons(self, p: dict) -> list[tuple[str, str]]:
+        cart = cart_link(p, self.config["cart_qty"], self.config["sales_channel"])
+        if cart:
+            return [("🛒 Agregar al carrito y pagar", cart), ("Ver producto", p["link"])]
+        return [("🛒 Comprar ahora", p["link"])]
+
     async def notify_available(self, p: dict, simulated: bool = False) -> bool:
         head = "🧪 <b>SIMULACIÓN</b> — " if simulated else ""
         qty = f" · 📦 {p['qty']} und." if p.get("qty") else ""
+        cart = cart_link(p, self.config["cart_qty"], self.config["sales_channel"])
+        tip = ("Toca <b>Agregar al carrito y pagar</b>: abre la tienda con el calendario ya en tu carrito."
+               if cart else f"👉 {html.escape(p['link'])}")
         text = (f"{head}🎄 <b>¡CALENDARIO DE ADVIENTO DISPONIBLE!</b>\n\n"
                 f"<b>{html.escape(p['name'])}</b>\n💰 {money(p.get('price'))}{qty}\n\n"
-                f"👉 {html.escape(p['link'])}\n⏱ Detectado {fmt(now())}")
-        ok = await self.telegram(text, ("🛒 Comprar ahora", p["link"]))
+                f"{tip}\n⏱ Detectado {fmt(now())}")
+        buttons = self.buy_buttons(p)
+        ok = await self.telegram(text, buttons)
         if ok and self.config["alert_repeats"] > 1:
-            self.spawn(self.repeat_alert(p, self.config["alert_repeats"] - 1, head))
+            self.spawn(self.repeat_alert(p, self.config["alert_repeats"] - 1, head, buttons))
         return ok
 
-    async def repeat_alert(self, p: dict, times: int, head: str):
+    async def repeat_alert(self, p: dict, times: int, head: str, buttons: list[tuple[str, str]]):
         """Repite el aviso para que el celular vuelva a sonar por si no viste el primero."""
         for i in range(times):
             await asyncio.sleep(20)
-            await self.telegram(f"{head}⏰ <b>Recordatorio {i + 2}:</b> el calendario está disponible, ¡compra ya!\n{html.escape(p['link'])}",
-                                ("🛒 Comprar ahora", p["link"]))
+            await self.telegram(f"{head}⏰ <b>Recordatorio {i + 2}:</b> el calendario está disponible, ¡compra ya!",
+                                buttons)
 
     async def maybe_heartbeat(self):
         hours = self.config["heartbeat_hours"]
@@ -700,12 +732,32 @@ async def test_telegram():
     return {"ok": ok}
 
 
+async def real_sample_product() -> dict | None:
+    """Un producto real con stock de la tienda, para que la simulación pruebe el enlace al carrito de verdad."""
+    try:
+        r = await mon.get_json(f"{STORE}/api/catalog_system/pub/products/search", {"_from": 0, "_to": 19})
+        if r.status_code in (200, 206):
+            for p in map(parse_product, r.json()):
+                if p["name"] and p["available"] and p["sku"]:
+                    return p
+    except Exception as e:
+        mon.log("warn", f"No se pudo traer un producto real para la simulación: {e}")
+    return None
+
+
 @app.post("/api/simulate", dependencies=[Depends(auth)])
 async def simulate():
-    fake = {"id": "simulacion", "name": "Calendario de Adviento Trendy 2026 (simulado)",
-            "link": STORE, "available": True, "qty": 120, "price": 189900}
     mon.log("test", "🧪 Simulando detección del calendario…")
-    mon.log("alert", f"🧪 SIMULACIÓN · ¡DISPONIBLE! {fake['name']} · {money(fake['price'])} → {fake['link']}")
+    sample = await real_sample_product()
+    if sample:
+        fake = {**sample, "id": "simulacion", "name": f"{sample['name']} (producto de prueba en lugar del calendario)"}
+        mon.log("test", f"Producto real usado para probar el carrito: {sample['name']} (SKU {sample['sku']})")
+    else:
+        fake = {"id": "simulacion", "name": "Calendario de Adviento Trendy 2026 (simulado)",
+                "link": STORE, "available": True, "qty": 120, "price": 189900, "sku": None}
+        mon.log("warn", "Simulación sin producto real: la alerta llevará solo el enlace a la tienda")
+    mon.log("alert", f"🧪 SIMULACIÓN · ¡DISPONIBLE! {fake['name']} · {money(fake.get('price'))} → "
+                     f"{cart_link(fake, mon.config['cart_qty'], mon.config['sales_channel']) or fake['link']}")
     ok = await mon.notify_available(fake, simulated=True)
     mon.log("test" if ok else "error", "Alerta simulada entregada en Telegram ✔" if ok else "La alerta simulada no llegó a Telegram")
     return {"ok": ok}

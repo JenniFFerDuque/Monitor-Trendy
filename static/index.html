@@ -51,6 +51,9 @@ button,input,textarea{font:inherit;color:inherit}
 .found{font-size:clamp(36px,8vw,60px);color:var(--blush)}
 .buy{display:inline-flex;align-items:center;gap:10px;margin-top:18px;background:var(--blush);color:var(--blush-ink);font-weight:700;font-size:18px;border-radius:999px;padding:14px 26px;text-decoration:none}
 .buy:hover{filter:brightness(1.06)}
+.buy-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 20px}
+.buy-row .buy{margin-top:18px}
+.buy-row .ghost-link{margin-top:18px}
 .ghost-link{color:var(--blush);font-weight:600}
 
 .doors{display:grid;grid-template-columns:repeat(11,1fr);gap:6px;margin-top:24px}
@@ -257,6 +260,7 @@ summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
         <div class="grid2">
           <label class="f">Mensaje de “sigo vivo” cada (horas, 0 = nunca)<input type="number" name="heartbeat_hours" min="0" max="168" inputmode="numeric"></label>
           <label class="f">Avisos seguidos cuando haya stock (1–5)<input type="number" name="alert_repeats" min="1" max="5" inputmode="numeric"></label>
+          <label class="f">Unidades que agrega el botón del carrito (1–5)<input type="number" name="cart_qty" min="1" max="5" inputmode="numeric"></label>
         </div>
       </div>
 
@@ -292,6 +296,7 @@ summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
           <div class="grid2">
             <label class="f">Avisarme tras N errores seguidos<input type="number" name="error_alert_threshold" min="1" max="100" inputmode="numeric"></label>
             <label class="f">Líneas visibles en Actividad<input type="number" id="maxLines" min="50" max="1500" inputmode="numeric"></label>
+            <label class="f">Canal de venta de VTEX (sc), normalmente 1<input type="number" name="sales_channel" min="1" max="99" inputmode="numeric"></label>
           </div>
           <label class="check" style="margin-top:10px"><input type="checkbox" name="log_verbose"> Mostrar cada consulta en Actividad (más detalle)</label>
         </div>
@@ -413,7 +418,9 @@ function buildHero(p){
     return [
       el("h1", {className:"found", textContent:"¡Está disponible!"}),
       el("p", {className:"lead"}, a.name, el("br"), price ? el("span", {className:"price", textContent:price}) : null, price && extra ? ", " : "", extra),
-      el("a", {className:"buy", href:a.link, target:"_blank", rel:"noopener", textContent:"Comprar ahora"}),
+      el("div", {className:"buy-row"},
+        el("a", {className:"buy", href:a.cart || a.link, target:"_blank", rel:"noopener", textContent: a.cart ? "Agregar al carrito y pagar" : "Comprar ahora"}),
+        a.cart ? el("a", {className:"ghost-link", href:a.link, target:"_blank", rel:"noopener", textContent:"Ver producto"}) : null),
       ...D()
     ];
   }
