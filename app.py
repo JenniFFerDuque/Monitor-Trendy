@@ -20,9 +20,9 @@ from pathlib import Path
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from datalog import KEYS, QueryLog
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 # ---------------------------------------------------------------- ajustes base
 STORE = os.getenv("STORE_URL", "https://www.maquillajetrendyshop.com").rstrip("/")
@@ -212,7 +212,14 @@ class Monitor:
                              os.getenv("SHEETS_TOKEN", ""))
         self.started_at = now()
         self.client: httpx.AsyncClient | None = None
+        self.bg_tasks: set[asyncio.Task] = set()   # referencias fuertes: evita que el GC cancele tareas
         self._load_log_tail()
+
+    def spawn(self, coro) -> asyncio.Task:
+        task = asyncio.create_task(coro)
+        self.bg_tasks.add(task)
+        task.add_done_callback(self.bg_tasks.discard)
+        return task
 
     # ---------------------------------------------------------------- registro
     def _load_log_tail(self):
@@ -250,7 +257,18 @@ class Monitor:
         self.broadcast("status", self.status())
 
     def status(self) -> dict:
+        cfg = self.config
+        products = list(self.state["products"].values())
+        live = next((p for p in products if p["available"] and p.get("id") != "simulacion"), None)
         return {
+            "server_now": time.time() * 1000,          # el panel corrige el reloj del celular con esto
+            "window_enabled": cfg["window_enabled"],
+            "window_start": cfg["window_start"],
+            "window_end": cfg["window_end"],
+            "available_product": live,
+            "intervals": {"normal_min": cfg["interval_min"], "normal_max": cfg["interval_max"],
+                          "window_min": cfg["window_interval_min_seconds"], "window_max": cfg["window_interval_max_seconds"],
+                          "turbo": cfg["turbo_interval_seconds"]},
             "paused": self.config["paused"],
             "busy": self.busy.locked(),
             "next_check_ts": self.next_check_at.timestamp() * 1000 if self.next_check_at else None,
@@ -265,7 +283,7 @@ class Monitor:
             "window": f"{self.config['window_start']} → {self.config['window_end']}" if self.config["window_enabled"] else None,
             "telegram_ready": bool(TG_TOKEN and TG_CHAT),
             "password_set": bool(PANEL_PASSWORD),
-            "products": list(self.state["products"].values()),
+            "products": products,
             "store": STORE,
             "queries_total": self.qlog.total,
             "sheets": self.qlog.sheets_status(),
@@ -315,7 +333,8 @@ class Monitor:
             random.shuffle(self.rotation)
         return [self.rotation.pop()]
 
-    async def fetch_plan(self, plan, reason: str = "", mode: str = ""):
+    async def fetch_plan(self, plan, reason: str = "", mode: str = "") -> list[dict]:
+        """Hace UNA consulta, devuelve los productos ya normalizados y la registra como fila de datos."""
         label, url, params = plan
         source = label.split(" ")[0]
         term = params.get("ft") or params.get("query") or params.get("fq", "").replace("productId:", "")
@@ -327,14 +346,15 @@ class Monitor:
             if status not in (200, 206):
                 raise RuntimeError(f"HTTP {status}")
             data = r.json()
-            found = data if isinstance(data, list) else (data.get("products") or [])
+            raw = data if isinstance(data, list) else (data.get("products") or [])
+            found = [p for p in map(parse_product, raw) if p["name"]]
             self.log("debug", f"{label}: {len(found)} resultados")
             return found
         except Exception as e:
             err = str(e) or e.__class__.__name__
             raise
         finally:
-            hits = [p for p in (parse_product(x) for x in found) if p["name"] and self.matches(p["name"])]
+            hits = [p for p in found if self.matches(p["name"])]
             prices = [p["price"] for p in hits if p["price"]]
             self.qlog.record(
                 when, revision=self.state["checks"] + 1, motivo=reason, modo=mode, fuente=source,
@@ -367,10 +387,7 @@ class Monitor:
                     errors.append(f"{plan[0]}: {e}")
                     self.log("warn", f"Falló la consulta {plan[0]}: {e}")
                     continue
-                for raw in items:
-                    p = parse_product(raw)
-                    if not p["name"]:
-                        continue
+                for p in items:
                     if p["id"] in found:  # combina las dos fuentes
                         old = found[p["id"]]
                         old["available"] = old["available"] or p["available"]
@@ -418,7 +435,7 @@ class Monitor:
             if not rec["notified_published"] and self.config["notify_published_without_stock"]:
                 self.log("alert", f"👀 Publicado SIN stock todavía: {p['name']} → {p['link']}")
                 rec["notified_published"] = await self.telegram(
-                    f"👀 <b>Ya aparece publicado (aún sin stock)</b>\n{html.escape(p['name'])}\n{p['link']}\n\n"
+                    f"👀 <b>Ya aparece publicado (aún sin stock)</b>\n{html.escape(p['name'])}\n{html.escape(p['link'])}\n\n"
                     "Activé el modo turbo y te aviso apenas tenga unidades.",
                     ("Ver producto", p["link"]),
                 )
@@ -473,17 +490,17 @@ class Monitor:
         qty = f" · 📦 {p['qty']} und." if p.get("qty") else ""
         text = (f"{head}🎄 <b>¡CALENDARIO DE ADVIENTO DISPONIBLE!</b>\n\n"
                 f"<b>{html.escape(p['name'])}</b>\n💰 {money(p.get('price'))}{qty}\n\n"
-                f"👉 {p['link']}\n⏱ Detectado {fmt(now())}")
+                f"👉 {html.escape(p['link'])}\n⏱ Detectado {fmt(now())}")
         ok = await self.telegram(text, ("🛒 Comprar ahora", p["link"]))
         if ok and self.config["alert_repeats"] > 1:
-            asyncio.create_task(self.repeat_alert(p, self.config["alert_repeats"] - 1, head))
+            self.spawn(self.repeat_alert(p, self.config["alert_repeats"] - 1, head))
         return ok
 
     async def repeat_alert(self, p: dict, times: int, head: str):
         """Repite el aviso para que el celular vuelva a sonar por si no viste el primero."""
         for i in range(times):
             await asyncio.sleep(20)
-            await self.telegram(f"{head}⏰ <b>Recordatorio {i + 2}:</b> el calendario está disponible, ¡compra ya!\n{p['link']}",
+            await self.telegram(f"{head}⏰ <b>Recordatorio {i + 2}:</b> el calendario está disponible, ¡compra ya!\n{html.escape(p['link'])}",
                                 ("🛒 Comprar ahora", p["link"]))
 
     async def maybe_heartbeat(self):
@@ -581,15 +598,20 @@ mon = Monitor()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    mon.client = httpx.AsyncClient(timeout=20, follow_redirects=True)
+    mon.client = httpx.AsyncClient(
+        timeout=httpx.Timeout(20, connect=10), follow_redirects=True,
+        limits=httpx.Limits(max_connections=10, max_keepalive_connections=4))
     if not PANEL_PASSWORD:
         mon.log("warn", "PANEL_PASSWORD no está definido: el panel está abierto. Defínelo antes de publicarlo.")
-    task = asyncio.create_task(mon.run_forever())
-    sync = asyncio.create_task(mon.qlog.sync_forever(mon.client, mon.log))
+    mon.spawn(mon.run_forever())
+    mon.spawn(mon.qlog.sync_forever(mon.client, mon.log))
     yield
-    task.cancel()
-    sync.cancel()
-    await mon.qlog.flush(mon.client, mon.log)
+    for t in list(mon.bg_tasks):
+        t.cancel()
+    try:  # al redesplegar, sube a Sheets lo pendiente antes de apagar
+        await asyncio.wait_for(mon.qlog.flush(mon.client, mon.log), 15)
+    except Exception:
+        pass
     await mon.client.aclose()
 
 
@@ -600,8 +622,10 @@ security = HTTPBasic(auto_error=False)
 def auth(creds: HTTPBasicCredentials | None = Depends(security)):
     if not PANEL_PASSWORD:
         return
-    ok = creds and secrets.compare_digest(creds.username, PANEL_USER) and \
-        secrets.compare_digest(creds.password, PANEL_PASSWORD)
+    # compare_digest con str falla si hay tildes o ñ: se compara en bytes
+    ok = creds is not None and \
+        secrets.compare_digest(creds.username.encode(), PANEL_USER.encode()) & \
+        secrets.compare_digest(creds.password.encode(), PANEL_PASSWORD.encode())
     if not ok:
         raise HTTPException(401, "Credenciales inválidas", headers={"WWW-Authenticate": "Basic"})
 
@@ -609,7 +633,14 @@ def auth(creds: HTTPBasicCredentials | None = Depends(security)):
 # ---------------------------------------------------------------- rutas
 @app.get("/health")
 async def health():
-    return {"ok": True, "checks": mon.state["checks"], "last_check": fmt(mon.last_check_at)}
+    """503 si el bucle dejó de revisar (sirve para monitores externos como UptimeRobot)."""
+    cfg = mon.config
+    limit = max(cfg["interval_max"] * 60 + cfg["jitter_max_seconds"], 600) * 2 + 300
+    ref = mon.last_check_at or mon.started_at
+    stale = not cfg["paused"] and (now() - ref).total_seconds() > limit
+    body = {"ok": not stale, "checks": mon.state["checks"], "last_check": fmt(mon.last_check_at),
+            "mode": mon.mode(), "paused": cfg["paused"]}
+    return JSONResponse(body, status_code=503 if stale else 200)
 
 
 @app.get("/", dependencies=[Depends(auth)])
@@ -630,6 +661,8 @@ async def get_config():
 @app.post("/api/config", dependencies=[Depends(auth)])
 async def set_config(request: Request):
     body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(400, "Se esperaba un objeto JSON")
     body.pop("paused", None)  # la pausa se cambia con su propio botón
     mon.config = sanitize_config(body, mon.config)
     mon.rotation = []
@@ -698,13 +731,14 @@ async def download_logs():
 
 @app.get("/api/queries", dependencies=[Depends(auth)])
 async def queries(limit: int = 50):
-    return {"headers": [k for k in KEYS], "rows": mon.qlog.rows(limit), "total": mon.qlog.total}
+    return {"headers": KEYS, "rows": mon.qlog.tail(limit), "total": mon.qlog.total}
 
 
+# Generar el Excel con miles de filas toma segundos: se hace en otro hilo para no frenar el monitor.
 @app.get("/api/queries/download.xlsx", dependencies=[Depends(auth)])
 async def queries_xlsx():
     stamp = now().strftime("%Y%m%d-%H%M")
-    return Response(mon.qlog.to_xlsx(),
+    return Response(await asyncio.to_thread(mon.qlog.to_xlsx),
                     media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="consultas-trendy-{stamp}.xlsx"'})
 
@@ -712,7 +746,7 @@ async def queries_xlsx():
 @app.get("/api/queries/download.csv", dependencies=[Depends(auth)])
 async def queries_csv():
     stamp = now().strftime("%Y%m%d-%H%M")
-    return Response(mon.qlog.to_csv(), media_type="text/csv; charset=utf-8",
+    return Response(await asyncio.to_thread(mon.qlog.to_csv), media_type="text/csv; charset=utf-8",
                     headers={"Content-Disposition": f'attachment; filename="consultas-trendy-{stamp}.csv"'})
 
 

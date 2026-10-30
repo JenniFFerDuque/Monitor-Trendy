@@ -1,6 +1,6 @@
 # 🎄 Monitor del Calendario de Adviento Trendy
 
-Consulta la tienda oficial (www.maquillajetrendyshop.com, plataforma VTEX) las 24 horas y te manda a Telegram el link de compra con un botón **🛒 Comprar ahora** apenas el calendario tenga stock. Corre en la nube, así que funciona con tu computador apagado.
+Vigila la tienda oficial (www.maquillajetrendyshop.com, plataforma VTEX) las 24 horas y te manda a Telegram el link de compra con un botón **🛒 Comprar ahora** apenas el calendario tenga stock. Corre en la nube, así que funciona con tu computador apagado.
 
 ## Cómo funciona
 
@@ -34,7 +34,70 @@ Consulta la tienda oficial (www.maquillajetrendyshop.com, plataforma VTEX) las 2
   - `⚠️` si la tienda falla 5 veces seguidas, y `✅` cuando se recupera.
 - **No se detiene**: el bucle se reinicia solo ante cualquier fallo; si la tienda da errores espera un poco más (máx. 4 min en la ventana, 10 min fuera) y reintenta. Configuración, detecciones y registro se guardan en `/data`.
 
+## Puesta en marcha (≈15 minutos)
 
+### 1. Crea el bot de Telegram
+1. En Telegram abre **@BotFather** → `/newbot` → ponle nombre. Copia el **token** (`123456:ABC…`).
+2. Abre el chat con tu bot nuevo y envíale `/start` (sin esto no puede escribirte).
+3. Para tu **chat ID**: abre en el navegador `https://api.telegram.org/bot<TU_TOKEN>/getUpdates` y copia el número de `"chat":{"id": …}`. (Alternativa: escribe a **@userinfobot**.)
+
+### 2. Sube el código a GitHub
+Crea un repositorio **privado** (por ejemplo `trendy-monitor`) y sube esta carpeta tal cual.
+
+### 3. Despliega en Railway (24/7)
+1. Entra a railway.com con tu cuenta de GitHub → **New Project → Deploy from GitHub repo** → elige el repositorio. Detecta el `Dockerfile` solo.
+2. En el servicio → **Variables**, agrega:
+
+   | Variable | Valor |
+   |---|---|
+   | `TELEGRAM_BOT_TOKEN` | el token de BotFather |
+   | `TELEGRAM_CHAT_ID` | tu chat ID |
+   | `PANEL_PASSWORD` | una contraseña para el panel |
+   | `PANEL_USER` | (opcional) usuario, por defecto `admin` |
+   | `PORT` | `8000` |
+
+3. Clic derecho en el servicio → **Attach Volume** → ruta de montaje **`/data`** (aquí se guarda el registro y la configuración).
+4. **Settings → Networking → Generate Domain**. Esa URL es tu panel.
+5. Deja **1 sola réplica** (el monitor vive dentro del servidor; dos réplicas duplicarían avisos).
+
+Costo: el plan Hobby de Railway cuesta 5 USD/mes e incluye 5 USD de uso; un proceso tan pequeño como este normalmente cabe dentro de eso.
+
+### 4. Prueba
+Abre la URL, entra con tu usuario y contraseña y:
+1. **Probar Telegram** → debe llegarte un mensaje.
+2. **Simular alerta** → te llega la alerta completa con el botón de compra (marcada como SIMULACIÓN; no altera nada real).
+3. Mira la pestaña **Actividad**: cada revisión aparece en vivo.
+
+## Panel
+
+- **Cuenta regresiva** al primer día de lanzamiento, con las puertas del 10 al 20 de noviembre. Desde el primer día dice **A la espera** y marca el día actual; si el calendario aparece, muestra **Comprar ahora**.
+- **Estado en una frase**: todo en orden / revisando / en pausa / la tienda no responde, con la próxima revisión.
+- **Actividad**: registro en vivo con filtros (alertas, revisiones, problemas, pruebas), separado por día.
+- **Datos**: descarga en Excel o CSV y estado de Google Sheets.
+- **Ajustes**: fechas, frecuencia y avisos a la vista; búsqueda, turbo y sistema en *Opciones avanzadas*.
+
+> Si aparece un falso positivo (otro producto con "calendario" en el nombre), agrega una palabra en **Ignorar si contiene**.
+
+## Detalles técnicos
+
+- `railway.json`: Railway reinicia el servicio si se cae y usa `/health` para validar cada despliegue.
+- `/health` responde **503** si el monitor lleva demasiado tiempo sin revisar (sirve para un monitor externo gratuito como UptimeRobot).
+- Al apagarse o redesplegar, el servidor recibe la señal correctamente y sube a Sheets las filas pendientes.
+- La descarga de Excel se genera en otro hilo: no frena las revisiones aunque haya miles de filas.
+
+## Alternativas de hosting
+
+- **Gratis**: una VM "Always Free" de Oracle Cloud con Docker (`docker build -t trendy . && docker run -d --restart=always -p 80:8000 -v trendy:/data --env-file .env trendy`). Más pasos, y Oracle puede reclamar instancias que considere inactivas.
+- **No recomendado**: el plan gratis de Render; apaga el servicio tras 15 min sin visitas y borra el disco al reiniciar, así que el monitor se detendría.
+
+## Probar en tu computador
+
+```bash
+pip install -r requirements.txt
+export TELEGRAM_BOT_TOKEN=... TELEGRAM_CHAT_ID=...
+uvicorn app:app --port 8000
+# abre http://localhost:8000
+```
 
 ## Registro de consultas (Excel / Google Sheets)
 
@@ -42,6 +105,11 @@ Cada consulta HTTP a la tienda se guarda como una fila en `/data/consultas.csv`.
 
 - **Excel**: panel → *Datos para análisis* → **Descargar Excel** (hoja `Consultas` como tabla con filtros + hoja `Diccionario`).
 - **CSV**: mismo contenido, para pandas / Power BI.
-- **Google Sheets (opcional)**: 
+- **Google Sheets (opcional)**: pega `google-sheets/Codigo.gs` en *Extensiones → Apps Script* de una hoja, cambia `TOKEN`, implementa como *Aplicación web* (ejecutar como yo, acceso: cualquier usuario) y agrega en Railway:
+
+  | Variable | Valor |
+  |---|---|
+  | `SHEETS_WEBHOOK_URL` | URL `/exec` de la aplicación web |
+  | `SHEETS_TOKEN` | la misma clave de `TOKEN` |
 
   Las filas se envían en lote cada 5 min (de inmediato si aparece el calendario). Si Google falla, se guardan y se reintenta.

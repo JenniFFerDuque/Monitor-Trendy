@@ -7,7 +7,7 @@ Registro de datos de cada consulta a la tienda (una fila por consulta HTTP).
 import asyncio
 import csv
 import io
-import time
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 
@@ -45,7 +45,8 @@ class QueryLog:
         self.token = token.strip()
         self.pending: list[list] = []        # filas aún no enviadas a Sheets
         self.last_ts: float | None = None
-        self.total = self._count()
+        self.recent: deque[list[str]] = deque(maxlen=200)   # vista previa sin releer el archivo
+        self.total = 0
         self.sheets_last_ok: str | None = None
         self.sheets_last_error: str | None = None
         self.sheets_sent = 0
@@ -53,13 +54,13 @@ class QueryLog:
         if not self.path.exists() or self.path.stat().st_size == 0:
             with self.path.open("w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow(KEYS)
-
-    def _count(self) -> int:
-        try:
-            with self.path.open(encoding="utf-8") as f:
-                return max(0, sum(1 for _ in f) - 1)
-        except FileNotFoundError:
-            return 0
+        else:  # una sola pasada al arrancar: cuenta filas y guarda las últimas
+            with self.path.open(encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
+                next(reader, None)
+                for row in reader:
+                    self.total += 1
+                    self.recent.append(row)
 
     # ------------------------------------------------------------ registrar
     def record(self, when: datetime, **fields) -> dict:
@@ -77,6 +78,7 @@ class QueryLog:
         with self.path.open("a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow(values)
         self.total += 1
+        self.recent.append([str(v) for v in values])
         if self.webhook:
             self.pending.append(values)
             if len(self.pending) > 20000:      # nunca crece sin límite si Sheets falla días
@@ -85,15 +87,19 @@ class QueryLog:
                 self.flush_event.set()
         return row
 
-    def rows(self, limit: int | None = None) -> list[list[str]]:
-        with self.path.open(encoding="utf-8") as f:
-            data = list(csv.reader(f))[1:]
-        return data[-limit:] if limit else data
+    def rows(self) -> list[list[str]]:
+        """Todas las filas (solo para exportar; se llama desde un hilo aparte)."""
+        with self.path.open(encoding="utf-8", newline="") as f:
+            return list(csv.reader(f))[1:]
+
+    def tail(self, limit: int = 50) -> list[list[str]]:
+        return list(self.recent)[-max(1, min(limit, 200)):]
 
     def clear(self):
         with self.path.open("w", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow(KEYS)
         self.total = 0
+        self.recent.clear()
         self.pending.clear()
 
     # ------------------------------------------------------------ exportar

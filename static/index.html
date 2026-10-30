@@ -2,359 +2,634 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monitor Calendario Trendy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17121F">
+<title>Monitor Trendy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#fbf7f4;--card:#ffffff;--ink:#2a1f24;--muted:#7b6b72;--line:#efe4e6;
-  --brand:#d6336c;--brand-soft:#fde7ef;--ok:#1f9d63;--ok-soft:#e3f6ec;--warn:#c27c0e;--warn-soft:#fdf2dc;
-  --err:#d23b3b;--err-soft:#fde5e5;--info:#3b6fd2;--info-soft:#e6eefc;--test:#7b4fd6;--test-soft:#efe8fd;
-  --log-bg:#1e171b;--log-ink:#eadfe3;
+  --night:#17121F; --velvet:#211A2B; --velvet-2:#2B2237; --seam:#3A2E48;
+  --text:#F7EDF3; --mauve:#B9A6C0; --dim:#8A7792;
+  --blush:#FF8FB8; --blush-ink:#2A0F1C; --foil:#F4CF7A; --foil-soft:rgba(244,207,122,.14);
+  --mint:#7EDDB4; --amber:#F5B259; --coral:#FF7B7B;
+  --r-lg:22px; --r-md:14px; --r-sm:10px;
+  --display:"Bricolage Grotesque", system-ui, sans-serif;
+  --body:"Figtree", system-ui, sans-serif;
 }
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 "DM Sans",system-ui,sans-serif}
-.wrap{max-width:1120px;margin:0 auto;padding:20px 16px 60px}
-header{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
-h1{font-size:22px;margin:0;letter-spacing:-.01em}
-h1 small{display:block;font-size:13px;font-weight:400;color:var(--muted)}
-.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:99px;font-weight:600;font-size:13px}
-.pill i{width:8px;height:8px;border-radius:50%;background:currentColor}
-.pill.live{background:var(--ok-soft);color:var(--ok)} .pill.live i{animation:pulse 1.6s infinite}
-.pill.paused{background:var(--warn-soft);color:var(--warn)} .pill.off{background:var(--err-soft);color:var(--err)}
-@keyframes pulse{50%{opacity:.25}}
-.grid{display:grid;gap:14px}
-.stats{grid-template-columns:repeat(4,1fr)}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px}
-.stat b{display:block;font-size:24px;letter-spacing:-.02em}
-.stat span{color:var(--muted);font-size:13px}
-.big{font-family:"JetBrains Mono",monospace}
-.actions{display:flex;flex-wrap:wrap;gap:10px;margin:16px 0}
-button{font:inherit;font-weight:600;border:0;border-radius:10px;padding:11px 16px;cursor:pointer;transition:transform .1s,opacity .2s}
-button:active{transform:scale(.97)} button:disabled{opacity:.5;cursor:wait}
-.b-brand{background:var(--brand);color:#fff}.b-test{background:var(--test);color:#fff}
-.b-soft{background:var(--brand-soft);color:var(--brand)}.b-ghost{background:transparent;border:1px solid var(--line);color:var(--ink)}
-.cols{grid-template-columns:1.6fr 1fr;align-items:start}
-h2{font-size:15px;margin:0 0 12px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
-.log{background:var(--log-bg);color:var(--log-ink);border-radius:12px;height:520px;overflow:auto;padding:10px 12px;font:12.5px/1.55 "JetBrains Mono",monospace}
-.row{display:flex;gap:8px;padding:3px 0;border-bottom:1px solid #2c2328;white-space:pre-wrap;word-break:break-word}
-.row time{color:#8d7c84;flex:none}
-.lv{flex:none;font-size:11px;padding:0 6px;border-radius:4px;height:18px;line-height:18px;text-transform:uppercase}
-.lv.check{background:#2d3f63;color:#a9c3ff}.lv.info{background:#33292e;color:#cdbfc5}.lv.debug{background:#2a2a2a;color:#999}
-.lv.warn{background:#5a4214;color:#ffd27a}.lv.error{background:#5c1f1f;color:#ffb0b0}
-.lv.alert{background:#6b1d3b;color:#ffc2d8}.lv.test{background:#3c2a63;color:#d4c2ff}
-.row.alert{background:#3a1726}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{font-size:12px;padding:4px 10px;border-radius:99px;border:1px solid var(--line);background:#fff;cursor:pointer;user-select:none}
-.chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
-label{display:block;font-size:13px;color:var(--muted);margin-bottom:10px}
-input[type=number],input[type=text],textarea{width:100%;font:inherit;color:var(--ink);padding:9px 10px;border:1px solid var(--line);border-radius:9px;background:#fff;margin-top:4px}
-textarea{min-height:56px;resize:vertical}
-.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.tog{display:flex;align-items:center;gap:8px;color:var(--ink);font-size:14px}
-.tog input{width:18px;height:18px;accent-color:var(--brand)}
-fieldset{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:0 0 12px}
-legend{font-size:12px;font-weight:700;color:var(--brand);padding:0 4px;text-transform:uppercase;letter-spacing:.04em}
-.prod{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
-.prod img{width:44px;height:44px;border-radius:8px;object-fit:cover;background:var(--brand-soft)}
-.prod a{color:var(--brand);font-weight:600;text-decoration:none}
-.tag{font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px}
-.tag.yes{background:var(--ok-soft);color:var(--ok)}.tag.no{background:var(--warn-soft);color:var(--warn)}
-.muted{color:var(--muted);font-size:13px}
-.banner{background:var(--err-soft);color:var(--err);padding:10px 14px;border-radius:10px;margin-bottom:12px;font-size:14px;display:none}
-.toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%) translateY(80px);background:var(--ink);color:#fff;padding:12px 18px;border-radius:12px;transition:transform .25s;z-index:10;max-width:calc(100% - 32px)}
-.toast.show{transform:translateX(-50%) translateY(0)}
-@media (max-width:860px){.stats{grid-template-columns:repeat(2,1fr)}.cols{grid-template-columns:1fr}.log{height:420px}}
+html{color-scheme:dark}
+body{margin:0;background:var(--night);color:var(--text);font:16px/1.55 var(--body);-webkit-font-smoothing:antialiased;
+  background-image:radial-gradient(900px 420px at 85% -120px, rgba(255,143,184,.10), transparent 70%);
+  background-repeat:no-repeat}
+.page{max-width:880px;margin:0 auto;padding:20px 16px calc(48px + env(safe-area-inset-bottom))}
+button,input,textarea{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--foil);outline-offset:2px;border-radius:6px}
+
+/* ---------- encabezado */
+.top{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--display);font-weight:700;font-size:18px;letter-spacing:-.01em}
+.brand svg{flex:none}
+.conn{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--mauve);white-space:nowrap}
+.conn i{width:8px;height:8px;border-radius:50%;background:var(--dim)}
+.conn.on i{background:var(--mint)} .conn.off i{background:var(--coral)}
+
+.notice{border-radius:var(--r-md);padding:12px 14px;margin-bottom:12px;font-size:14px;background:rgba(255,123,123,.10);color:#FFC2C2;border:1px solid rgba(255,123,123,.25)}
+.notice[hidden]{display:none}
+
+/* ---------- héroe: cuenta regresiva + puertas */
+.hero{background:var(--velvet);border:1px solid var(--seam);border-radius:var(--r-lg);padding:28px 24px 22px;position:relative;overflow:hidden}
+.hero h1{font-family:var(--display);font-weight:800;margin:0;letter-spacing:-.02em;line-height:1.02}
+.lead{color:var(--mauve);margin:10px 0 0;max-width:56ch}
+.kicker{font-size:15px;color:var(--mauve);margin:0 0 10px}
+.clock{display:flex;gap:10px;margin-top:4px}
+.unit{flex:1;max-width:120px;background:var(--night);border:1px solid var(--seam);border-radius:var(--r-md);padding:12px 8px 10px;text-align:center}
+.unit b{display:block;font-family:var(--display);font-weight:800;font-size:clamp(34px,8vw,54px);line-height:1;color:var(--foil);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.unit span{font-size:13px;color:var(--mauve)}
+.waiting{font-size:clamp(44px,10vw,76px);color:var(--foil)}
+.found{font-size:clamp(36px,8vw,60px);color:var(--blush)}
+.buy{display:inline-flex;align-items:center;gap:10px;margin-top:18px;background:var(--blush);color:var(--blush-ink);font-weight:700;font-size:18px;border-radius:999px;padding:14px 26px;text-decoration:none}
+.buy:hover{filter:brightness(1.06)}
+.ghost-link{color:var(--blush);font-weight:600}
+
+.doors{display:grid;grid-template-columns:repeat(11,1fr);gap:6px;margin-top:24px}
+.door{aspect-ratio:3/4;border-radius:8px;border:1px solid var(--seam);background:var(--velvet-2);display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;min-width:0}
+.door b{font-family:var(--display);font-weight:700;font-size:clamp(14px,3.4vw,20px);line-height:1}
+.door small{font-size:10.5px;color:var(--dim)}
+.door::after{content:"";position:absolute;width:4px;height:4px;border-radius:50%;background:var(--dim);right:6px;top:50%}
+.door.past{background:transparent;border-style:dashed;color:var(--dim)}
+.door.past::after{display:none}
+.door.today{border-color:var(--foil);background:var(--foil-soft);color:var(--foil);box-shadow:0 0 0 3px rgba(244,207,122,.12)}
+.door.today small{color:var(--foil)}
+.door.hit{border-color:var(--blush);background:rgba(255,143,184,.16);color:var(--blush)}
+.doors-legend{display:flex;justify-content:space-between;gap:10px;margin-top:8px;font-size:13px;color:var(--dim)}
+.doors-legend #legNote{white-space:nowrap;color:var(--foil)}
+.row .msg small{display:block;color:var(--dim);font-size:12.5px;font-weight:400}
+.price{color:var(--text);font-weight:600;white-space:nowrap}
+@media (prefers-reduced-motion:no-preference){
+  .door.today{animation:glow 2.4s ease-in-out infinite}
+  @keyframes glow{50%{box-shadow:0 0 0 6px rgba(244,207,122,.05)}}
+}
+
+/* ---------- estado */
+.status{display:flex;gap:12px;align-items:flex-start;margin:18px 2px 6px}
+.status .dot{width:12px;height:12px;border-radius:50%;margin-top:6px;flex:none;background:var(--mint);box-shadow:0 0 0 4px rgba(126,221,180,.15)}
+.status.warn .dot{background:var(--amber);box-shadow:0 0 0 4px rgba(245,178,89,.15)}
+.status.bad .dot{background:var(--coral);box-shadow:0 0 0 4px rgba(255,123,123,.15)}
+.status.busy .dot{background:var(--foil)}
+.status p{margin:0}
+.status strong{font-weight:600}
+.status .sub{color:var(--mauve);font-size:14px}
+.facts{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0 16px}
+.fact{background:var(--velvet);border:1px solid var(--seam);border-radius:var(--r-sm);padding:10px 12px;min-width:0}
+.fact span{display:block;font-size:12.5px;color:var(--mauve)}
+.fact b{display:block;font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+.fact b.ok{color:var(--mint)} .fact b.no{color:var(--amber)} .fact b.err{color:var(--coral)}
+
+/* ---------- botones */
+.actions{display:flex;flex-wrap:wrap;gap:8px}
+.btn{border:1px solid var(--seam);background:var(--velvet-2);border-radius:999px;padding:10px 16px;font-weight:600;font-size:15px;cursor:pointer;display:inline-flex;align-items:center;gap:8px}
+.btn:hover{border-color:#54436A}
+.btn:disabled{opacity:.55;cursor:progress}
+.btn.primary{background:var(--blush);border-color:var(--blush);color:var(--blush-ink)}
+.btn.small{padding:7px 12px;font-size:14px}
+.btn svg{width:16px;height:16px;flex:none}
+
+/* ---------- pestañas */
+.tabs{display:flex;gap:4px;margin:28px 0 12px;border-bottom:1px solid var(--seam)}
+.tab{background:none;border:0;padding:10px 14px;font-weight:600;color:var(--mauve);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+.tab[aria-selected="true"]{color:var(--text);border-bottom-color:var(--blush)}
+.panel[hidden]{display:none}
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.chip{border:1px solid var(--seam);background:transparent;border-radius:999px;padding:5px 12px;font-size:13.5px;color:var(--mauve);cursor:pointer}
+.chip[aria-pressed="true"]{background:var(--text);border-color:var(--text);color:var(--night);font-weight:600}
+.spacer{flex:1}
+.check{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--mauve);cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--blush)}
+
+/* registro */
+.log{background:var(--velvet);border:1px solid var(--seam);border-radius:var(--r-md);height:460px;overflow:auto;padding:4px 0;overscroll-behavior:contain}
+.day{position:sticky;top:0;background:var(--velvet);color:var(--dim);font-size:12.5px;padding:8px 14px 4px;z-index:1}
+.row{display:grid;grid-template-columns:62px 22px 1fr;gap:8px;padding:6px 14px;font-size:14px;align-items:start}
+.row time{color:var(--dim);font-variant-numeric:tabular-nums;font-size:13px;padding-top:1px}
+.row .ic{text-align:center}
+.row .msg{word-break:break-word;color:#E6DAE4}
+.row.check .msg{color:var(--mauve)}
+.row.alert{background:rgba(255,143,184,.10)} .row.alert .msg{color:var(--text);font-weight:600}
+.row.warn .msg{color:#F8D3A0} .row.error .msg{color:#FFB3B3}
+.empty{padding:28px 16px;text-align:center;color:var(--dim)}
+
+/* datos */
+.card{background:var(--velvet);border:1px solid var(--seam);border-radius:var(--r-md);padding:16px}
+.card h3{font-family:var(--display);font-weight:700;font-size:19px;margin:0 0 4px;letter-spacing:-.01em}
+.muted{color:var(--mauve);font-size:14px}
+.tbl{width:100%;border-collapse:collapse;font-size:13.5px;font-variant-numeric:tabular-nums}
+.tbl th{text-align:left;color:var(--mauve);font-weight:500;padding:6px 8px;border-bottom:1px solid var(--seam);white-space:nowrap}
+.tbl td{padding:6px 8px;border-bottom:1px solid rgba(58,46,72,.6);white-space:nowrap}
+.tbl td.bad{color:var(--coral)} .tbl td.good{color:var(--mint)}
+.scroll-x{overflow-x:auto;margin-top:12px}
+
+/* ajustes */
+form .group{margin-bottom:18px}
+form h3{font-family:var(--display);font-weight:700;font-size:17px;margin:0 0 2px}
+form .hint{color:var(--mauve);font-size:13.5px;margin:0 0 10px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+label.f{display:block;font-size:13.5px;color:var(--mauve)}
+label.f input,label.f textarea{display:block;width:100%;margin-top:4px;background:var(--night);border:1px solid var(--seam);border-radius:var(--r-sm);padding:10px 12px;color:var(--text)}
+label.f textarea{min-height:46px;resize:vertical}
+label.f input:focus,label.f textarea:focus{border-color:var(--blush);outline:none}
+details{border-top:1px solid var(--seam);padding-top:12px;margin-top:6px}
+summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
+.savebar{position:sticky;bottom:0;padding:12px 0 calc(4px + env(safe-area-inset-bottom));background:linear-gradient(transparent,var(--night) 30%);display:flex;gap:10px;align-items:center}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));transform:translate(-50%,120px);background:var(--text);color:var(--night);font-weight:600;padding:12px 18px;border-radius:12px;max-width:calc(100% - 32px);z-index:10;visibility:hidden;transition:transform .25s,visibility .25s}
+.toast.show{transform:translate(-50%,0);visibility:visible}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+
+@media (max-width:640px){
+  .hero{padding:22px 16px 18px}
+  .facts{grid-template-columns:1fr 1fr}
+  .doors{gap:4px}
+  .door small,.door::after{display:none}
+  .actions .btn svg{display:none}
+  .row{grid-template-columns:54px 18px 1fr;gap:6px;padding:7px 12px}
+  .grid2{grid-template-columns:1fr}
+  .log{height:400px}
+  .actions .btn{flex:1 1 calc(50% - 8px);justify-content:center}
+}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>🎄 Monitor Calendario de Adviento <small>Trendy Shop · API pública VTEX · alertas por Telegram</small></h1>
-    <span id="pill" class="pill off"><i></i><span>Conectando…</span></span>
+<div class="page">
+  <header class="top">
+    <div class="brand">
+      <svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect x="3" y="8" width="22" height="17" rx="4" fill="none" stroke="#F4CF7A" stroke-width="2"/><path d="M14 8v17M3 14h22" stroke="#F4CF7A" stroke-width="2"/><path d="M14 8c-2-4-7-4-6-1 1 2 6 1 6 1zm0 0c2-4 7-4 6-1-1 2-6 1-6 1z" fill="#FF8FB8"/></svg>
+      Monitor Trendy
+    </div>
+    <span class="conn" id="conn"><i></i><span>Conectando…</span></span>
   </header>
 
-  <div id="bannerTg" class="banner">⚠️ Telegram no está configurado: define TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en el servidor.</div>
-  <div id="bannerPw" class="banner">🔓 El panel no tiene contraseña. Define PANEL_PASSWORD antes de dejarlo en internet.</div>
+  <div class="notice" id="nTg" hidden>Telegram no está configurado. Agrega TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en las variables de Railway para recibir avisos.</div>
+  <div class="notice" id="nPw" hidden>El panel no tiene contraseña. Agrega PANEL_PASSWORD en las variables de Railway.</div>
 
-  <div class="grid stats">
-    <div class="card stat"><span>Próxima revisión en</span><b class="big" id="countdown">—</b><span id="nextDetail" class="muted"></span></div>
-    <div class="card stat"><span>Revisiones hechas</span><b id="checks">0</b><span id="since" class="muted"></span></div>
-    <div class="card stat"><span>Última revisión</span><b id="last" style="font-size:18px">—</b><span id="lastRes" class="muted"></span></div>
-    <div class="card stat"><span>Errores seguidos</span><b id="errs">0</b><span id="mode" class="muted"></span></div>
+  <section class="hero" id="hero" aria-live="polite"></section>
+
+  <div class="status" id="status"><span class="dot"></span><div><p><strong id="stMain">Cargando…</strong></p><p class="sub" id="stSub"></p></div></div>
+
+  <div class="facts">
+    <div class="fact"><span>Última revisión</span><b id="fLast">—</b></div>
+    <div class="fact"><span>Revisiones</span><b id="fChecks">0</b></div>
+    <div class="fact"><span>Telegram</span><b id="fTg">—</b></div>
+    <div class="fact"><span>Google Sheets</span><b id="fSheets">—</b></div>
   </div>
 
   <div class="actions">
-    <button class="b-brand" id="btnTest">📨 Probar notificación de Telegram</button>
-    <button class="b-test" id="btnSim">🧪 Simular detección</button>
-    <button class="b-soft" id="btnNow">🔄 Revisar ahora</button>
-    <button class="b-ghost" id="btnPause">⏸ Pausar</button>
+    <button class="btn primary" id="bTest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4z"/></svg>Probar Telegram</button>
+    <button class="btn" id="bSim"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg>Simular alerta</button>
+    <button class="btn" id="bNow"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7L21 8M21 3v5h-5"/></svg>Revisar ahora</button>
+    <button class="btn" id="bPause">Pausar</button>
   </div>
 
-  <div class="grid cols">
-    <section class="card">
-      <h2>Registro de actividad en vivo
-        <span class="chips" id="levels"></span>
-      </h2>
-      <div class="log" id="log"></div>
-      <div class="actions" style="margin-bottom:0">
-        <label class="tog" style="margin:0"><input type="checkbox" id="autoscroll" checked> Seguir lo nuevo</label>
-        <button class="b-ghost" id="btnDl">⬇ Descargar</button>
-        <button class="b-ghost" id="btnClear">🗑 Borrar registro</button>
-      </div>
-    </section>
+  <nav class="tabs" role="tablist">
+    <button class="tab" role="tab" aria-selected="true" aria-controls="pLog" id="tLog">Actividad</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="pData" id="tData">Datos</button>
+    <button class="tab" role="tab" aria-selected="false" aria-controls="pCfg" id="tCfg">Ajustes</button>
+  </nav>
 
-    <div class="grid">
-      <section class="card">
-        <h2>Detectado en la tienda</h2>
-        <div id="products"><p class="muted">Todavía nada. El monitor sigue buscando.</p></div>
-      </section>
-
-      <section class="card">
-        <h2>Datos para análisis <span class="muted" id="qTotal"></span></h2>
-        <p class="muted" style="margin-top:0">Cada consulta a la tienda queda como una fila: hora, modo, fuente, código HTTP, tiempo de respuesta, productos y stock.</p>
-        <div class="actions" style="margin:8px 0">
-          <button class="b-brand" id="btnXlsx">📊 Descargar Excel</button>
-          <button class="b-ghost" id="btnCsv">⬇ CSV</button>
-          <button class="b-soft" id="btnSync">🔄 Enviar a Sheets</button>
-        </div>
-        <p class="muted" id="sheetsState" style="margin:0"></p>
-        <div id="qTable" style="overflow-x:auto;margin-top:10px"></div>
-      </section>
-
-      <section class="card">
-        <h2>Configuración</h2>
-        <form id="cfg">
-          <fieldset><legend>Ventana de lanzamiento</legend>
-            <label class="tog"><input type="checkbox" name="window_enabled"> Revisar más seguido entre estas fechas</label>
-            <div class="two">
-              <label>Desde<input type="date" name="window_start"></label>
-              <label>Hasta (incluido)<input type="date" name="window_end"></label>
-            </div>
-            <div class="two">
-              <label>Cada mínimo (s)<input type="number" name="window_interval_min_seconds" min="30" max="600"></label>
-              <label>Cada máximo (s)<input type="number" name="window_interval_max_seconds" min="30" max="600"></label>
-            </div>
-            <label>Segundos aleatorios extra (0–120)<input type="number" name="window_jitter_max_seconds" min="0" max="120"></label>
-          </fieldset>
-          <fieldset><legend>Frecuencia fuera de la ventana</legend>
-            <div class="two">
-              <label>Mínimo (min)<input type="number" name="interval_min" min="1" max="60" step="0.5"></label>
-              <label>Máximo (min)<input type="number" name="interval_max" min="1" max="60" step="0.5"></label>
-            </div>
-            <label>Segundos aleatorios extra (0–180)<input type="number" name="jitter_max_seconds" min="0" max="180"></label>
-          </fieldset>
-          <fieldset><legend>Búsqueda</legend>
-            <label>Términos de búsqueda (separados por coma)<textarea name="search_terms"></textarea></label>
-            <label>El nombre debe contener<input type="text" name="required_words"></label>
-            <label>Descartar si contiene<input type="text" name="exclude_words" placeholder="ej: agenda, planner"></label>
-            <label class="tog"><input type="checkbox" name="use_intelligent_search"> Usar también Intelligent Search</label>
-          </fieldset>
-          <fieldset><legend>Alertas</legend>
-            <label class="tog"><input type="checkbox" name="notify_published_without_stock"> Avisar si aparece publicado sin stock</label>
-            <label class="tog"><input type="checkbox" name="turbo_enabled"> Modo turbo al aparecer publicado</label>
-            <div class="two">
-              <label>Turbo cada (s)<input type="number" name="turbo_interval_seconds" min="20" max="300"></label>
-              <label>Turbo durante (min)<input type="number" name="turbo_duration_minutes" min="5" max="1440"></label>
-            </div>
-            <label>Avisos de "disponible" (1–5, cada 20 s)<input type="number" name="alert_repeats" min="1" max="5"></label>
-            <div class="two">
-              <label>"Sigo vivo" cada (h, 0 = no)<input type="number" name="heartbeat_hours" min="0" max="168"></label>
-              <label>Avisar tras N errores<input type="number" name="error_alert_threshold" min="1" max="100"></label>
-            </div>
-          </fieldset>
-          <fieldset><legend>Registro</legend>
-            <label class="tog"><input type="checkbox" name="log_verbose"> Registro detallado (cada consulta)</label>
-            <label>Líneas visibles<input type="number" id="maxLines" min="50" max="1500" value="400"></label>
-          </fieldset>
-          <button class="b-brand" type="submit" style="width:100%">💾 Guardar configuración</button>
-        </form>
-      </section>
+  <!-- Actividad -->
+  <section class="panel" id="pLog" role="tabpanel" aria-labelledby="tLog">
+    <div class="toolbar" id="filters">
+      <button class="chip" data-f="all" aria-pressed="true">Todo</button>
+      <button class="chip" data-f="alert" aria-pressed="false">Alertas</button>
+      <button class="chip" data-f="check" aria-pressed="false">Revisiones</button>
+      <button class="chip" data-f="problem" aria-pressed="false">Problemas</button>
+      <button class="chip" data-f="other" aria-pressed="false">Pruebas y sistema</button>
+      <span class="spacer"></span>
+      <label class="check"><input type="checkbox" id="follow" checked> Seguir lo nuevo</label>
     </div>
-  </div>
+    <div class="log" id="log"></div>
+    <div class="toolbar" style="margin-top:10px">
+      <button class="btn small" id="bLogDl">Descargar registro</button>
+      <button class="btn small" id="bLogClear">Borrar registro</button>
+    </div>
+  </section>
+
+  <!-- Datos -->
+  <section class="panel" id="pData" role="tabpanel" aria-labelledby="tData" hidden>
+    <div class="card">
+      <h3>Registro de consultas</h3>
+      <p class="muted" style="margin:0 0 12px">Cada consulta a la tienda queda como una fila con hora, modo, fuente, código HTTP, tiempo de respuesta y stock. <span id="qTotal"></span></p>
+      <div class="actions">
+        <button class="btn primary" id="bXlsx">Descargar Excel</button>
+        <button class="btn" id="bCsv">Descargar CSV</button>
+        <button class="btn" id="bSync" hidden>Enviar a Google Sheets</button>
+      </div>
+      <p class="muted" id="sheetsLine" style="margin:12px 0 0"></p>
+      <div class="scroll-x" id="qTable"></div>
+    </div>
+  </section>
+
+  <!-- Ajustes -->
+  <section class="panel" id="pCfg" role="tabpanel" aria-labelledby="tCfg" hidden>
+    <form id="cfg" autocomplete="off">
+      <div class="group">
+        <h3>Fechas de lanzamiento</h3>
+        <p class="hint">Entre estas fechas el monitor revisa más seguido. La cuenta regresiva apunta al primer día.</p>
+        <label class="check" style="margin-bottom:10px"><input type="checkbox" name="window_enabled"> Usar fechas de lanzamiento</label>
+        <div class="grid2">
+          <label class="f">Desde<input type="date" name="window_start"></label>
+          <label class="f">Hasta (incluido)<input type="date" name="window_end"></label>
+        </div>
+      </div>
+      <div class="group">
+        <h3>Frecuencia</h3>
+        <p class="hint">Siempre se suman unos segundos al azar para que parezca una visita normal.</p>
+        <div class="grid2">
+          <label class="f">En las fechas: cada (mín., segundos)<input type="number" name="window_interval_min_seconds" min="30" max="600" inputmode="numeric"></label>
+          <label class="f">En las fechas: cada (máx., segundos)<input type="number" name="window_interval_max_seconds" min="30" max="600" inputmode="numeric"></label>
+          <label class="f">Otros días: cada (mín., minutos)<input type="number" name="interval_min" min="1" max="60" step="0.5" inputmode="decimal"></label>
+          <label class="f">Otros días: cada (máx., minutos)<input type="number" name="interval_max" min="1" max="60" step="0.5" inputmode="decimal"></label>
+        </div>
+      </div>
+      <div class="group">
+        <h3>Avisos</h3>
+        <div class="grid2">
+          <label class="f">Mensaje de “sigo vivo” cada (horas, 0 = nunca)<input type="number" name="heartbeat_hours" min="0" max="168" inputmode="numeric"></label>
+          <label class="f">Avisos seguidos cuando haya stock (1–5)<input type="number" name="alert_repeats" min="1" max="5" inputmode="numeric"></label>
+        </div>
+      </div>
+
+      <details>
+        <summary>Opciones avanzadas</summary>
+        <div class="group">
+          <h3>Segundos al azar</h3>
+          <div class="grid2">
+            <label class="f">En las fechas (0–120)<input type="number" name="window_jitter_max_seconds" min="0" max="120" inputmode="numeric"></label>
+            <label class="f">Otros días (0–180)<input type="number" name="jitter_max_seconds" min="0" max="180" inputmode="numeric"></label>
+          </div>
+        </div>
+        <div class="group">
+          <h3>Búsqueda</h3>
+          <label class="f" style="margin-bottom:10px">Términos de búsqueda, separados por coma<textarea name="search_terms"></textarea></label>
+          <div class="grid2">
+            <label class="f">El nombre debe contener<input type="text" name="required_words"></label>
+            <label class="f">Ignorar si contiene<input type="text" name="exclude_words" placeholder="por ejemplo: agenda, planner"></label>
+          </div>
+          <label class="check" style="margin-top:10px"><input type="checkbox" name="use_intelligent_search"> Alternar con la búsqueda inteligente de VTEX</label>
+        </div>
+        <div class="group">
+          <h3>Cuando aparezca sin stock</h3>
+          <label class="check" style="margin-bottom:6px"><input type="checkbox" name="notify_published_without_stock"> Avisarme que ya está publicado</label>
+          <label class="check" style="margin-bottom:10px"><input type="checkbox" name="turbo_enabled"> Revisar solo ese producto, más rápido (turbo)</label>
+          <div class="grid2">
+            <label class="f">Turbo cada (segundos)<input type="number" name="turbo_interval_seconds" min="20" max="300" inputmode="numeric"></label>
+            <label class="f">Turbo durante (minutos)<input type="number" name="turbo_duration_minutes" min="5" max="1440" inputmode="numeric"></label>
+          </div>
+        </div>
+        <div class="group">
+          <h3>Sistema</h3>
+          <div class="grid2">
+            <label class="f">Avisarme tras N errores seguidos<input type="number" name="error_alert_threshold" min="1" max="100" inputmode="numeric"></label>
+            <label class="f">Líneas visibles en Actividad<input type="number" id="maxLines" min="50" max="1500" inputmode="numeric"></label>
+          </div>
+          <label class="check" style="margin-top:10px"><input type="checkbox" name="log_verbose"> Mostrar cada consulta en Actividad (más detalle)</label>
+        </div>
+      </details>
+
+      <div class="savebar">
+        <button class="btn primary" type="submit">Guardar ajustes</button>
+        <span class="muted" id="cfgState"></span>
+      </div>
+    </form>
+  </section>
 </div>
-<div class="toast" id="toast"></div>
+<div class="toast" id="toast" role="status"></div>
 
 <script>
+"use strict";
 const $ = s => document.querySelector(s);
-const LEVELS = {check:"Revisiones", alert:"Alertas", info:"Info", test:"Pruebas", warn:"Avisos", error:"Errores", debug:"Detalle"};
+const TZ_OFFSET = -5 * 3600e3;                       // Bogotá, sin horario de verano
+const MONTHS = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+const ICONS = {check:"✓", alert:"🎄", info:"•", test:"🧪", warn:"⚠️", error:"✕", debug:"·"};
+const GROUPS = {all:null, alert:["alert"], check:["check"], problem:["warn","error"], other:["info","test","debug"]};
 const store = {
   get(k, d){ try{ const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); }catch{ return d; } },
   set(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch{} }
 };
-let shown = store.get("levels", Object.keys(LEVELS));
-let maxLines = store.get("maxLines", 400);
-let entries = [], status = null;
 
-function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 3500); }
-async function api(path, opts={}){
+let S = null, skew = 0, filter = store.get("filter", "all"), maxLines = store.get("maxLines", 400);
+let entries = [], lastChecksSeen = null, formDirty = false;
+
+// ---------- utilidades
+const serverNow = () => Date.now() + skew;
+const bogotaDate = ms => new Date(ms + TZ_OFFSET).toISOString().slice(0, 10);
+const startOf = d => Date.parse(d + "T00:00:00-05:00");
+const pad = n => String(n).padStart(2, "0");
+const fmtNum = n => Number(n || 0).toLocaleString("es-CO");
+const prettyDay = d => `${Number(d.slice(8))} de ${["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"][Number(d.slice(5,7)) - 1]}`;
+function el(tag, props = {}, ...kids){
+  const n = Object.assign(document.createElement(tag), props);
+  for(const k of kids) if(k != null) n.append(k);
+  return n;
+}
+function toast(msg){ const t = $("#toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove("show"), 3600); }
+async function api(path, opts = {}){
   const r = await fetch(path, {headers:{"Content-Type":"application/json"}, ...opts});
-  if(!r.ok) throw new Error("HTTP " + r.status);
+  if(!r.ok) throw new Error(r.status === 401 ? "sesión vencida, recarga la página" : "error " + r.status);
   return r.json();
 }
+function daysBetween(a, b){ const out = []; for(let t = startOf(a); t <= startOf(b) && out.length < 31; t += 864e5) out.push(bogotaDate(t)); return out; }
 
-// ---------- registro
-function renderLevels(){
-  $("#levels").innerHTML = "";
-  for(const [k, label] of Object.entries(LEVELS)){
-    const c = document.createElement("span");
-    c.className = "chip" + (shown.includes(k) ? " on" : "");
-    c.textContent = label;
-    c.onclick = () => { shown = shown.includes(k) ? shown.filter(x=>x!==k) : [...shown, k]; store.set("levels", shown); renderLevels(); renderLog(); };
-    $("#levels").appendChild(c);
+// ---------- héroe
+function phase(){
+  if(!S) return "loading";
+  if(S.available_product) return "available";
+  if(S.mode === "turbo") return "published";
+  if(!S.window_enabled) return "nodates";
+  const now = serverNow();
+  if(now < startOf(S.window_start)) return "countdown";
+  if(now < startOf(S.window_end) + 864e5) return "waiting";
+  return "after";
+}
+let heroPhase = null;
+function renderHero(){
+  const p = phase(), h = $("#hero");
+  if(p !== heroPhase){ heroPhase = p; h.replaceChildren(...buildHero(p)); }
+  if(p === "countdown") tickClock();
+  const today = bogotaDate(serverNow());
+  h.querySelectorAll(".door").forEach(d => {
+    d.classList.toggle("past", d.dataset.d < today);
+    d.classList.toggle("today", d.dataset.d === today && p !== "available");
+    d.classList.toggle("hit", p === "available" && d.dataset.d === today);
+  });
+  const dayIdx = S && S.window_enabled ? daysBetween(S.window_start, S.window_end).indexOf(today) : -1;
+  const leg = h.querySelector("#legNote");
+  if(leg) leg.textContent = dayIdx >= 0 ? `Día ${dayIdx + 1} de ${daysBetween(S.window_start, S.window_end).length}` : "";
+}
+function doors(){
+  if(!S.window_enabled) return null;
+  const days = daysBetween(S.window_start, S.window_end);
+  const grid = el("div", {className:"doors"});
+  grid.style.gridTemplateColumns = `repeat(${days.length},1fr)`;
+  days.forEach(d => {
+    const door = el("div", {className:"door", title: prettyDay(d)}, el("b", {textContent:Number(d.slice(8))}), el("small", {textContent:MONTHS[Number(d.slice(5,7)) - 1]}));
+    door.dataset.d = d; grid.append(door);
+  });
+  const legend = el("div", {className:"doors-legend"},
+    el("span", {textContent:`Puede salir entre el ${prettyDay(S.window_start)} y el ${prettyDay(S.window_end)}`}),
+    el("span", {id:"legNote"}));
+  return [grid, legend];
+}
+function buildHero(p){
+  if(p === "loading") return [el("p", {className:"lead", textContent:"Cargando…"})];
+  const D = () => doors() || [];
+  if(p === "countdown"){
+    const unit = (id, label) => el("div", {className:"unit"}, el("b", {id, textContent:"--"}), el("span", {textContent:label}));
+    return [
+      el("p", {className:"kicker", textContent:`Faltan para el ${prettyDay(S.window_start)}`}),
+      el("div", {className:"clock", role:"timer"}, unit("cD","días"), unit("cH","horas"), unit("cM","minutos"), unit("cS","segundos")),
+      ...D()
+    ];
   }
+  if(p === "waiting") return [
+    el("h1", {className:"waiting", textContent:"A la espera"}),
+    el("p", {className:"lead", textContent:"El calendario puede salir cualquier día de estos. Apenas tenga stock te llega el aviso a Telegram con el botón de compra."}),
+    ...D()
+  ];
+  if(p === "published"){
+    const prod = S.products.find(x => !x.available) || {};
+    return [
+      el("h1", {className:"found", textContent:"Ya apareció, aún sin stock"}),
+      el("p", {className:"lead", textContent:`${prod.name || "El calendario"} está publicado. Reviso solo ese producto cada ~${(S.intervals || {}).turbo || 30} s y te aviso en cuanto tenga unidades.`}),
+      prod.link ? el("p", {}, el("a", {className:"ghost-link", href:prod.link, target:"_blank", rel:"noopener", textContent:"Abrir el producto en la tienda"})) : null,
+      ...D()
+    ];
+  }
+  if(p === "available"){
+    const a = S.available_product;
+    const price = a.price ? "$ " + Math.round(a.price).toLocaleString("es-CO") : "";
+    const extra = [a.qty ? `${fmtNum(a.qty)} unidades disponibles` : ""].filter(Boolean).join("");
+    return [
+      el("h1", {className:"found", textContent:"¡Está disponible!"}),
+      el("p", {className:"lead"}, a.name, el("br"), price ? el("span", {className:"price", textContent:price}) : null, price && extra ? ", " : "", extra),
+      el("a", {className:"buy", href:a.link, target:"_blank", rel:"noopener", textContent:"Comprar ahora"}),
+      ...D()
+    ];
+  }
+  if(p === "after") return [
+    el("h1", {className:"waiting", textContent:"Sigue sin salir"}),
+    el("p", {className:"lead", textContent:`Las fechas previstas terminaron el ${prettyDay(S.window_end)}. El monitor sigue vigilando con la frecuencia normal; si Trendy anuncia otra fecha, cámbiala en Ajustes.`}),
+    ...D()
+  ];
+  return [
+    el("h1", {className:"waiting", textContent:"Vigilando"}),
+    el("p", {className:"lead", textContent:"No hay fechas de lanzamiento configuradas. El monitor revisa la tienda todo el tiempo con la frecuencia normal."})
+  ];
 }
-function rowFor(e){
-  const d = document.createElement("div");
-  d.className = "row " + e.level;
-  const t = document.createElement("time"); t.textContent = e.t.slice(5);
-  const l = document.createElement("span"); l.className = "lv " + e.level; l.textContent = e.level;
-  const m = document.createElement("span"); m.textContent = e.msg;
-  d.append(t, l, m); return d;
-}
-function renderLog(){
-  const box = $("#log"); box.innerHTML = "";
-  entries.filter(e => shown.includes(e.level)).slice(-maxLines).forEach(e => box.appendChild(rowFor(e)));
-  if($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
-}
-function addEntry(e){
-  entries.push(e); if(entries.length > 1500) entries.shift();
-  if(!shown.includes(e.level)) return;
-  const box = $("#log"); box.appendChild(rowFor(e));
-  while(box.children.length > maxLines) box.firstChild.remove();
-  if($("#autoscroll").checked) box.scrollTop = box.scrollHeight;
+function tickClock(){
+  const left = Math.max(0, startOf(S.window_start) - serverNow());
+  const s = Math.floor(left / 1000);
+  const set = (id, v) => { const n = document.getElementById(id); if(n && n.textContent !== v) n.textContent = v; };
+  set("cD", String(Math.floor(s / 86400))); set("cH", pad(Math.floor(s / 3600) % 24));
+  set("cM", pad(Math.floor(s / 60) % 60)); set("cS", pad(s % 60));
+  document.title = `${Math.floor(s / 86400)} d ${pad(Math.floor(s / 3600) % 24)} h – Monitor Trendy`;
 }
 
 // ---------- estado
-function renderStatus(s){
-  status = s;
-  const pill = $("#pill");
-  if(s.paused){ pill.className = "pill paused"; pill.lastChild.textContent = "En pausa"; }
-  else if(s.busy){ pill.className = "pill live"; pill.lastChild.textContent = "Consultando la tienda…"; }
-  else { pill.className = "pill live"; pill.lastChild.textContent = {turbo:"Vigilando · TURBO", ventana:"Vigilando · VENTANA DE LANZAMIENTO"}[s.mode] || "Vigilando 24/7"; }
-  $("#btnPause").textContent = s.paused ? "▶ Reanudar" : "⏸ Pausar";
-  $("#checks").textContent = s.checks;
-  $("#since").textContent = "activo desde " + s.started_at;
-  $("#last").textContent = s.last_check_at ? s.last_check_at.slice(11) : "—";
-  $("#lastRes").textContent = s.last_result ? `${s.last_result.analyzed} productos · ${s.last_result.matches} coincidencias` : "";
-  $("#errs").textContent = s.consecutive_errors;
-  $("#mode").textContent = {turbo:"modo turbo activo", ventana:"modo ventana " + (s.window || "")}[s.mode] || ("modo normal" + (s.window ? " · ventana " + s.window : ""));
-  $("#nextDetail").textContent = s.next_detail || "";
-  $("#bannerTg").style.display = s.telegram_ready ? "none" : "block";
-  $("#bannerPw").style.display = s.password_set ? "none" : "block";
-  $("#qTotal").textContent = (s.queries_total || 0).toLocaleString("es-CO") + " filas";
-  const sh = s.sheets || {};
-  $("#sheetsState").textContent = !sh.enabled ? "Google Sheets: no conectado (opcional, ver guía)."
-    : sh.last_error ? `Google Sheets: error «${sh.last_error}» · ${sh.pending} fila(s) en espera, se reintenta sola.`
-    : `Google Sheets: conectado ✔ · ${sh.sent} enviadas en esta sesión · ${sh.pending} en espera · última ${sh.last_ok || "—"}`;
-  $("#btnSync").style.display = sh.enabled ? "" : "none";
-  if (s.checks !== lastChecksSeen) { lastChecksSeen = s.checks; loadQueries(); }
-  const p = $("#products");
-  if(!s.products.length){ p.innerHTML = '<p class="muted">Todavía nada. El monitor sigue buscando.</p>'; return; }
-  p.innerHTML = "";
-  s.products.forEach(x => {
-    const d = document.createElement("div"); d.className = "prod";
-    const img = document.createElement("img"); if(x.image) img.src = x.image; img.alt = "";
-    const info = document.createElement("div");
-    const a = document.createElement("a"); a.href = x.link; a.target = "_blank"; a.rel = "noopener"; a.textContent = x.name;
-    const meta = document.createElement("div"); meta.className = "muted";
-    meta.innerHTML = `<span class="tag ${x.available ? "yes" : "no"}">${x.available ? "CON STOCK" : "SIN STOCK"}</span> visto desde ${x.first_seen}`;
-    info.append(a, meta); d.append(img, info); p.appendChild(d);
-  });
+function renderStatus(){
+  if(!S) return;
+  const box = $("#status"); box.className = "status";
+  let main, sub = "";
+  const iv = S.intervals || {};
+  const modeText = {
+    normal: `Modo normal: revisa cada ${iv.normal_min}–${iv.normal_max} minutos.`,
+    ventana: `Modo lanzamiento: revisa cada ${iv.window_min}–${iv.window_max} segundos.`,
+    turbo: `Modo turbo: revisa solo el producto cada ~${iv.turbo} segundos.`
+  }[S.mode] || "";
+  const next = S.next_check_ts ? Math.max(0, Math.round((S.next_check_ts - Date.now()) / 1000)) : null;
+  const nextTxt = next == null ? "" : `${Math.floor(next / 60)}:${pad(next % 60)}`;
+  if(S.paused){ box.classList.add("warn"); main = "En pausa"; sub = "No se está revisando la tienda. Toca Reanudar para seguir."; }
+  else if(S.busy){ box.classList.add("busy"); main = "Revisando la tienda ahora…"; sub = modeText; }
+  else if(S.consecutive_errors){ box.classList.add("bad"); main = `La tienda no respondió en las últimas ${S.consecutive_errors} revisiones`; sub = `Vuelvo a intentar en ${nextTxt}. Los detalles están en Actividad.`; }
+  else { main = `Todo en orden. Próxima revisión en ${nextTxt || "…"}`; sub = modeText; }
+  if($("#stMain").textContent !== main) $("#stMain").textContent = main;
+  if($("#stSub").textContent !== sub) $("#stSub").textContent = sub;
 }
-setInterval(() => {
-  const el = $("#countdown");
-  if(!status || status.paused){ el.textContent = status && status.paused ? "pausa" : "—"; return; }
-  if(status.busy){ el.textContent = "ahora"; return; }
-  if(!status.next_check_ts){ el.textContent = "—"; return; }
-  const s = Math.max(0, Math.round((status.next_check_ts - Date.now())/1000));
-  el.textContent = `${Math.floor(s/60)}:${String(s%60).padStart(2,"0")}`;
-}, 500);
+function renderFacts(){
+  $("#fLast").textContent = S.last_check_at ? S.last_check_at.slice(11, 16) : "—";
+  $("#fChecks").textContent = fmtNum(S.checks);
+  const tg = $("#fTg"); tg.textContent = S.telegram_ready ? "Conectado" : "Sin configurar"; tg.className = S.telegram_ready ? "ok" : "no";
+  const sh = S.sheets || {}, f = $("#fSheets");
+  f.textContent = !sh.enabled ? "No conectado" : sh.last_error ? "Con error" : "Conectado";
+  f.className = !sh.enabled ? "" : sh.last_error ? "err" : "ok";
+  $("#nTg").hidden = S.telegram_ready; $("#nPw").hidden = S.password_set;
+  $("#bPause").textContent = S.paused ? "Reanudar" : "Pausar";
+  $("#qTotal").textContent = `Llevas ${fmtNum(S.queries_total)} filas.`;
+  $("#bSync").hidden = !sh.enabled;
+  $("#sheetsLine").textContent = !sh.enabled ? "Google Sheets no está conectado. Es opcional; los pasos están en la guía."
+    : sh.last_error ? `Google Sheets respondió con error: «${sh.last_error}». Hay ${fmtNum(sh.pending)} filas en espera y se reintenta sola.`
+    : `Google Sheets conectado. ${fmtNum(sh.pending)} filas en espera; se envían cada 5 minutos${sh.last_ok ? ", último envío " + sh.last_ok.slice(11, 16) : ""}.`;
+}
+function onStatus(s){
+  S = s; skew = s.server_now - Date.now();
+  renderHero(); renderStatus(); renderFacts();
+  if(s.checks !== lastChecksSeen){ lastChecksSeen = s.checks; if(!$("#pData").hidden) loadQueries(); }
+}
+setInterval(() => { if(S){ renderStatus(); if(heroPhase === "countdown" || heroPhase === "waiting") renderHero(); } }, 1000);
 
-// ---------- últimas consultas (vista previa de los datos)
-let lastChecksSeen = null;
-const QCOLS = [["hora_txt","Hora"],["modo","Modo"],["fuente","Fuente"],["http","HTTP"],["ms","ms"],["productos","Prod."],["coincidencias","Coinc."],["con_stock","Stock"]];
+// ---------- actividad
+function passes(e){ const g = GROUPS[filter]; return !g || g.includes(e.level); }
+// Convierte "Revisión #12 (programada · catálogo «x»): aún no hay calendario · 2 productos vistos"
+// en un texto corto + un detalle gris debajo.
+const REV = /^Revisión #(\d+) \(([^·)]+?)(?: · ([^)]+))?\): (.*)$/;
+function humanize(e){
+  const m = e.level === "check" && REV.exec(e.msg);
+  if(!m) return [e.msg, null];
+  let [, n, why, via, rest] = m, seen = "";
+  const k = rest.match(/ · (\d+) productos vistos$/);
+  if(k){ rest = rest.slice(0, k.index); seen = `, ${k[1]} productos vistos`; }
+  rest = rest.charAt(0).toUpperCase() + rest.slice(1);
+  return [rest, `Revisión ${fmtNum(n)}, ${why}${via ? ", " + via : ""}${seen}`];
+}
+function rowFor(e){
+  const [main, detail] = humanize(e);
+  return el("div", {className:"row " + e.level},
+    el("time", {textContent:e.t.slice(11, 19)}),
+    el("span", {className:"ic", textContent:ICONS[e.level] || "•", ariaHidden:"true"}),
+    el("span", {className:"msg"}, main, detail ? el("small", {textContent:detail}) : null));
+}
+function dayRow(d){ return el("div", {className:"day", textContent: d === bogotaDate(serverNow()) ? "Hoy" : prettyDay(d)}); }
+function renderLog(){
+  const box = $("#log"), list = entries.filter(passes).slice(-maxLines);
+  const frag = document.createDocumentFragment(); let day = null;
+  for(const e of list){ const d = e.t.slice(0, 10); if(d !== day){ day = d; frag.append(dayRow(d)); } frag.append(rowFor(e)); }
+  box.replaceChildren(frag);
+  if(!list.length) box.append(el("div", {className:"empty", textContent: entries.length ? "No hay entradas de este tipo todavía." : "Aquí aparecerá cada revisión en cuanto ocurra."}));
+  box._day = day;
+  if($("#follow").checked) box.scrollTop = box.scrollHeight;
+}
+function addEntry(e){
+  entries.push(e); if(entries.length > 1500) entries.shift();
+  if(!passes(e)) return;
+  const box = $("#log"); box.querySelector(".empty")?.remove();
+  const d = e.t.slice(0, 10); if(d !== box._day){ box._day = d; box.append(dayRow(d)); }
+  box.append(rowFor(e));
+  while(box.querySelectorAll(".row").length > maxLines){ box.querySelector(".row").remove(); }
+  if($("#follow").checked) box.scrollTop = box.scrollHeight;
+}
+$("#filters").addEventListener("click", ev => {
+  const b = ev.target.closest(".chip"); if(!b) return;
+  filter = b.dataset.f; store.set("filter", filter);
+  document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c === b)));
+  renderLog();
+});
+document.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c.dataset.f === filter)));
+$("#follow").onchange = renderLog;
+
+// ---------- datos
+const QCOLS = [["fecha_hora","Hora"],["modo","Modo"],["fuente","Fuente"],["http","HTTP"],["ms","ms"],["productos","Productos"],["coincidencias","Calendario"],["con_stock","Stock"]];
 async function loadQueries(){
   try{
-    const q = await api("/api/queries?limit=8");
-    const idx = Object.fromEntries(q.headers.map((h,i)=>[h,i]));
+    const q = await api("/api/queries?limit=10");
+    const ix = Object.fromEntries(q.headers.map((h, i) => [h, i]));
     const box = $("#qTable");
-    if(!q.rows.length){ box.innerHTML = '<p class="muted">Aún no hay consultas registradas.</p>'; return; }
-    const t = document.createElement("table");
-    t.style.cssText = "width:100%;border-collapse:collapse;font-size:12px";
-    const hr = t.insertRow();
-    QCOLS.forEach(([,h]) => { const th = document.createElement("th"); th.textContent = h; th.style.cssText = "text-align:left;color:var(--muted);font-weight:600;padding:4px 6px;border-bottom:1px solid var(--line)"; hr.appendChild(th); });
+    if(!q.rows.length){ box.replaceChildren(el("p", {className:"muted", textContent:"Todavía no hay consultas registradas."})); return; }
+    const t = el("table", {className:"tbl"});
+    t.append(el("thead", {}, el("tr", {}, ...QCOLS.map(([, h]) => el("th", {textContent:h})))));
+    const tb = el("tbody");
     q.rows.slice().reverse().forEach(r => {
-      const tr = t.insertRow();
-      QCOLS.forEach(([k]) => {
-        const td = tr.insertCell(); td.style.cssText = "padding:4px 6px;border-bottom:1px solid var(--line);white-space:nowrap";
-        td.textContent = k === "hora_txt" ? r[idx.fecha_hora].slice(11) : r[idx[k]];
-        if(k === "http" && r[idx.ok] === "0") td.style.color = "var(--err)";
-      });
+      tb.append(el("tr", {}, ...QCOLS.map(([k]) => {
+        let v = r[ix[k]] ?? "";
+        if(k === "fecha_hora") v = v.slice(5, 16).replace("-", "/");
+        if(k === "con_stock") v = v === "1" ? "Sí" : "No";
+        const td = el("td", {textContent:v});
+        if(k === "http" && r[ix.ok] === "0") td.className = "bad";
+        if(k === "con_stock" && v === "Sí") td.className = "good";
+        return td;
+      })));
     });
-    box.innerHTML = ""; box.appendChild(t);
+    t.append(tb); box.replaceChildren(t);
   }catch(e){}
 }
-$("#btnXlsx").onclick = () => { location.href = "/api/queries/download.xlsx"; };
-$("#btnCsv").onclick = () => { location.href = "/api/queries/download.csv"; };
-$("#btnSync").onclick = async () => {
-  const b = $("#btnSync"); b.disabled = true;
-  try{ const r = await api("/api/queries/sync", {method:"POST"}); toast(r.ok ? `Enviadas ${r.sent} fila(s) a Google Sheets ✔` : "Sheets: " + r.error); }
-  catch(e){ toast("Error: " + e.message); } finally{ b.disabled = false; }
-};
+$("#bXlsx").onclick = () => { location.href = "/api/queries/download.xlsx"; };
+$("#bCsv").onclick = () => { location.href = "/api/queries/download.csv"; };
 
-// ---------- conexión en vivo
-function connect(){
-  const es = new EventSource("/api/stream");
-  es.addEventListener("log", ev => addEntry(JSON.parse(ev.data)));
-  es.addEventListener("status", ev => renderStatus(JSON.parse(ev.data)));
-  es.onerror = () => { $("#pill").className = "pill off"; $("#pill").lastChild.textContent = "Reconectando…"; };
+// ---------- pestañas
+const TABS = [["tLog","pLog"],["tData","pData"],["tCfg","pCfg"]];
+function openTab(id){
+  TABS.forEach(([t, p]) => { const on = t === id; $("#" + t).setAttribute("aria-selected", String(on)); $("#" + p).hidden = !on; });
+  store.set("tab", id);
+  if(id === "tData") loadQueries();
+  if(id === "tLog" && $("#follow").checked){ const b = $("#log"); b.scrollTop = b.scrollHeight; }
 }
+TABS.forEach(([t]) => $("#" + t).onclick = () => openTab(t));
+document.querySelector(".tabs").addEventListener("keydown", ev => {
+  if(!["ArrowLeft","ArrowRight"].includes(ev.key)) return;
+  const i = TABS.findIndex(([t]) => $("#" + t).getAttribute("aria-selected") === "true");
+  const n = TABS.at((i + (ev.key === "ArrowRight" ? 1 : -1)) % TABS.length)[0];
+  openTab(n); $("#" + n).focus();
+});
 
-// ---------- configuración
+// ---------- ajustes
 async function loadConfig(){
-  const c = await api("/api/config"); const f = $("#cfg");
-  for(const el of f.elements){
-    if(!el.name || !(el.name in c)) continue;
-    if(el.type === "checkbox") el.checked = !!c[el.name];
-    else el.value = Array.isArray(c[el.name]) ? c[el.name].join(", ") : c[el.name];
+  const c = await api("/api/config");
+  for(const f of $("#cfg").elements){
+    if(!f.name || !(f.name in c)) continue;
+    if(f.type === "checkbox") f.checked = !!c[f.name];
+    else f.value = Array.isArray(c[f.name]) ? c[f.name].join(", ") : c[f.name];
   }
-  $("#maxLines").value = maxLines;
+  $("#maxLines").value = maxLines; formDirty = false; $("#cfgState").textContent = "";
 }
+$("#cfg").addEventListener("input", () => { formDirty = true; $("#cfgState").textContent = "Cambios sin guardar"; });
 $("#cfg").addEventListener("submit", async ev => {
   ev.preventDefault();
   const body = {};
-  for(const el of ev.target.elements){
-    if(!el.name) continue;
-    body[el.name] = el.type === "checkbox" ? el.checked : (el.type === "number" ? Number(el.value) : el.value);
+  for(const f of ev.target.elements){
+    if(!f.name) continue;
+    body[f.name] = f.type === "checkbox" ? f.checked : f.type === "number" ? Number(f.value) : f.value;
   }
-  maxLines = Math.max(50, Math.min(1500, Number($("#maxLines").value) || 400)); store.set("maxLines", maxLines); renderLog();
-  try{ await api("/api/config", {method:"POST", body:JSON.stringify(body)}); await loadConfig(); toast("Configuración guardada ✔"); }
-  catch(e){ toast("No se pudo guardar: " + e.message); }
+  maxLines = Math.max(50, Math.min(1500, Number($("#maxLines").value) || 400)); store.set("maxLines", maxLines);
+  try{ await api("/api/config", {method:"POST", body:JSON.stringify(body)}); await loadConfig(); renderLog(); heroPhase = null; renderHero(); toast("Ajustes guardados"); }
+  catch(e){ toast("No se guardaron los ajustes: " + e.message); }
 });
 
-// ---------- botones
-function wire(id, path, okMsg, failMsg){
+// ---------- acciones
+function action(id, path, ok, fail){
   $(id).onclick = async () => {
     const b = $(id); b.disabled = true;
-    try{ const r = await api(path, {method:"POST"}); toast(r.ok === false ? failMsg : okMsg); }
-    catch(e){ toast("Error: " + e.message); }
+    try{ const r = await api(path, {method:"POST"}); toast(r.ok === false ? (r.error ? fail + ": " + r.error : fail) : ok(r)); }
+    catch(e){ toast(fail + ": " + e.message); }
     finally{ b.disabled = false; }
   };
 }
-wire("#btnTest", "/api/test-telegram", "Mensaje de prueba enviado a Telegram ✔", "Telegram no respondió: revisa el registro");
-wire("#btnSim", "/api/simulate", "Alerta simulada enviada ✔", "La simulación no llegó a Telegram: revisa el registro");
-wire("#btnNow", "/api/check-now", "Revisión en curso…", "");
-$("#btnPause").onclick = async () => { const r = await api("/api/pause", {method:"POST"}); toast(r.paused ? "Monitor en pausa" : "Monitor reanudado"); };
-$("#btnClear").onclick = async () => { if(confirm("¿Borrar todo el registro?")){ await api("/api/logs/clear", {method:"POST"}); entries = []; renderLog(); } };
-$("#btnDl").onclick = () => { location.href = "/api/logs/download"; };
-$("#autoscroll").onchange = renderLog;
+action("#bTest", "/api/test-telegram", () => "Mensaje de prueba enviado a Telegram", "Telegram no recibió la prueba");
+action("#bSim", "/api/simulate", () => "Alerta simulada enviada a Telegram", "La alerta simulada no llegó");
+action("#bNow", "/api/check-now", () => "Revisando la tienda…", "No se pudo revisar");
+action("#bPause", "/api/pause", r => r.paused ? "Monitor en pausa" : "Monitor reanudado", "No se pudo cambiar");
+action("#bSync", "/api/queries/sync", r => `${fmtNum(r.sent)} filas enviadas a Google Sheets`, "Google Sheets no recibió los datos");
+$("#bLogDl").onclick = () => { location.href = "/api/logs/download"; };
+$("#bLogClear").onclick = async () => {
+  if(!confirm("¿Borrar todo el registro de actividad? Los datos de consultas no se borran.")) return;
+  await api("/api/logs/clear", {method:"POST"}); entries = []; renderLog();
+};
+
+// ---------- conexión en vivo
+function setConn(state, text){ const c = $("#conn"); c.className = "conn " + state; c.lastChild.textContent = text; }
+function connect(){
+  const es = new EventSource("/api/stream");
+  es.onopen = () => setConn("on", "En vivo");
+  es.addEventListener("log", ev => addEntry(JSON.parse(ev.data)));
+  es.addEventListener("status", ev => onStatus(JSON.parse(ev.data)));
+  es.onerror = () => setConn("off", "Reconectando…");
+}
 
 (async () => {
-  renderLevels();
-  try{ entries = await api("/api/logs?limit=1500"); renderLog(); renderStatus(await api("/api/status")); await loadConfig(); }
-  catch(e){ toast("No se pudo cargar el panel: " + e.message); }
+  openTab(store.get("tab", "tLog"));
+  try{
+    const [logs, status] = await Promise.all([api("/api/logs?limit=1500"), api("/api/status")]);
+    entries = logs; onStatus(status); renderLog(); await loadConfig();
+  }catch(e){ toast("No se pudo cargar el panel: " + e.message); }
   connect();
 })();
 </script>
