@@ -18,6 +18,7 @@ El Calendario de Adviento de Trendy (tienda colombiana de maquillaje) sale en un
 
 - **Detección en ~1–2 minutos** durante la ventana de lanzamiento, sin intervención humana y con el computador apagado.
 - **Alertas accionables:** nombre, precio, unidades disponibles y un botón *Agregar al carrito y pagar* que usa el enlace oficial de checkout de VTEX.
+- **Alarma persistente:** repite el aviso cada 10 s hasta que la usuaria toca «Ya lo vi» en Telegram (botón con *callback* y escucha temporal de `getUpdates`), se detiene sola si el producto se agota y puede escalar a una llamada de voz.
 - **Tres modos adaptativos** que cambian solos según la fecha y lo que encuentra la tienda (normal, lanzamiento y turbo).
 - **Pipeline de datos:** 20 variables por consulta, exportables a Excel o CSV y sincronizadas con Google Sheets.
 - **Panel web en tiempo real** con cuenta regresiva, registro de actividad en vivo, configuración y botones de prueba de extremo a extremo.

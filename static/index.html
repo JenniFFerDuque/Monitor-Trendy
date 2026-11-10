@@ -37,6 +37,11 @@ button,input,textarea{font:inherit;color:inherit}
 
 .notice{border-radius:var(--r-md);padding:12px 14px;margin-bottom:12px;font-size:14px;background:rgba(255,123,123,.10);color:#FFC2C2;border:1px solid rgba(255,123,123,.25)}
 .notice[hidden]{display:none}
+.alarm{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--blush);color:var(--blush-ink);border-radius:var(--r-md);padding:14px 16px;margin-bottom:12px}
+.alarm[hidden]{display:none}
+.alarm strong{display:block;font-size:17px}
+.alarm span{font-size:14px}
+.alarm .btn{background:var(--blush-ink);color:var(--text);border-color:var(--blush-ink);flex:none}
 
 /* ---------- héroe: cuenta regresiva + puertas */
 .hero{background:var(--velvet);border:1px solid var(--seam);border-radius:var(--r-lg);padding:28px 24px 22px;position:relative;overflow:hidden}
@@ -176,6 +181,11 @@ summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
   <div class="notice" id="nTg" hidden>Telegram no está configurado. Agrega TELEGRAM_BOT_TOKEN y TELEGRAM_CHAT_ID en las variables de Railway para recibir avisos.</div>
   <div class="notice" id="nPw" hidden>El panel no tiene contraseña. Agrega PANEL_PASSWORD en las variables de Railway.</div>
 
+  <div class="alarm" id="alarmBar" hidden>
+    <div><strong>La alarma está sonando</strong><span>Te llega un mensaje nuevo cada pocos segundos.</span></div>
+    <button class="btn" id="bStopAlarm">Detener alarma</button>
+  </div>
+
   <section class="hero" id="hero" aria-live="polite"></section>
 
   <div class="status" id="status"><span class="dot"></span><div><p><strong id="stMain">Cargando…</strong></p><p class="sub" id="stSub"></p></div></div>
@@ -257,9 +267,13 @@ summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
       </div>
       <div class="group">
         <h3>Avisos</h3>
+        <label class="check" style="margin-bottom:10px"><input type="checkbox" name="alarm_enabled"> Alarma continua: repetir el aviso hasta que toque «Ya lo vi»</label>
         <div class="grid2">
           <label class="f">Mensaje de “sigo vivo” cada (horas, 0 = nunca)<input type="number" name="heartbeat_hours" min="0" max="168" inputmode="numeric"></label>
-          <label class="f">Avisos seguidos cuando haya stock (1–5)<input type="number" name="alert_repeats" min="1" max="5" inputmode="numeric"></label>
+          <label class="f">Alarma: un mensaje cada (segundos)<input type="number" name="alarm_interval_seconds" min="5" max="120" inputmode="numeric"></label>
+          <label class="f">Alarma: máximo durante (minutos)<input type="number" name="alarm_max_minutes" min="1" max="120" inputmode="numeric"></label>
+          <label class="f">Llamadas de voz por Telegram (0–5)<input type="number" name="call_attempts" min="0" max="5" inputmode="numeric"></label>
+          <label class="f">Avisos si la alarma está apagada (1–5)<input type="number" name="alert_repeats" min="1" max="5" inputmode="numeric"></label>
           <label class="f">Unidades que agrega el botón del carrito (1–5)<input type="number" name="cart_qty" min="1" max="5" inputmode="numeric"></label>
         </div>
       </div>
@@ -277,10 +291,12 @@ summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
           <h3>Búsqueda</h3>
           <label class="f" style="margin-bottom:10px">Términos de búsqueda, separados por coma<textarea name="search_terms"></textarea></label>
           <div class="grid2">
-            <label class="f">El nombre debe contener<input type="text" name="required_words"></label>
+            <label class="f">El nombre debe contener todas<input type="text" name="required_words"></label>
+            <label class="f">…o al menos una de estas<input type="text" name="any_words" placeholder="adviento, advent"></label>
             <label class="f">Ignorar si contiene<input type="text" name="exclude_words" placeholder="por ejemplo: agenda, planner"></label>
           </div>
           <label class="check" style="margin-top:10px"><input type="checkbox" name="use_intelligent_search"> Alternar con la búsqueda inteligente de VTEX</label>
+          <label class="check" style="margin-top:6px"><input type="checkbox" name="use_newest"> Revisar también los productos más nuevos de la tienda</label>
         </div>
         <div class="group">
           <h3>Cuando aparezca sin stock</h3>
@@ -472,6 +488,7 @@ function renderFacts(){
   f.className = !sh.enabled ? "" : sh.last_error ? "err" : "ok";
   $("#nTg").hidden = S.telegram_ready; $("#nPw").hidden = S.password_set;
   $("#bPause").textContent = S.paused ? "Reanudar" : "Pausar";
+  $("#alarmBar").hidden = !S.alarm_active;
   $("#qTotal").textContent = `Llevas ${fmtNum(S.queries_total)} filas.`;
   $("#bSync").hidden = !sh.enabled;
   $("#sheetsLine").textContent = !sh.enabled ? "Google Sheets no está conectado. Es opcional; los pasos están en la guía."
@@ -614,6 +631,7 @@ action("#bTest", "/api/test-telegram", () => "Mensaje de prueba enviado a Telegr
 action("#bSim", "/api/simulate", () => "Alerta simulada enviada a Telegram", "La alerta simulada no llegó");
 action("#bNow", "/api/check-now", () => "Revisando la tienda…", "No se pudo revisar");
 action("#bPause", "/api/pause", r => r.paused ? "Monitor en pausa" : "Monitor reanudado", "No se pudo cambiar");
+action("#bStopAlarm", "/api/alarm/stop", () => "Alarma detenida", "No se pudo detener");
 action("#bSync", "/api/queries/sync", r => `${fmtNum(r.sent)} filas enviadas a Google Sheets`, "Google Sheets no recibió los datos");
 $("#bLogDl").onclick = () => { location.href = "/api/logs/download"; };
 $("#bLogClear").onclick = async () => {

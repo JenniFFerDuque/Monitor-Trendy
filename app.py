@@ -35,6 +35,10 @@ STATIC = Path(__file__).parent / "static"
 
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+CALL_USER = os.getenv("CALLMEBOT_USER", "").strip()        # tu @usuario de Telegram (opcional)
+CALL_LANG = os.getenv("CALLMEBOT_LANG", "es-ES-Standard-A").strip()
+SOLD_OUT_CONFIRMATIONS = 3   # lecturas "sin stock" seguidas antes de dar por agotado
+ALARM_ICONS = ["🚨", "🎄", "🔔", "⏰", "🛒", "‼️"]
 PANEL_USER = os.getenv("PANEL_USER", "admin")
 PANEL_PASSWORD = os.getenv("PANEL_PASSWORD", "")
 TZ = timezone(timedelta(hours=-5))  # Bogotá
@@ -61,15 +65,21 @@ DEFAULT_CONFIG = {
     "window_jitter_max_seconds": 15,
     # Búsqueda
     "search_terms": ["calendario"],
-    "required_words": ["calendario"],  # el nombre debe contener todas
+    "required_words": ["calendario"],  # el nombre debe contener todas…
+    "any_words": ["adviento", "advent"],  # …o al menos una de estas (por si no dice "calendario")
     "exclude_words": [],               # descarta si contiene alguna
     "use_intelligent_search": True,    # alterna catálogo e Intelligent Search
+    "use_newest": True,                # revisa también los productos más recientes de la tienda
     # Alertas
     "notify_published_without_stock": True,
     "turbo_enabled": True,             # cuando aparece publicado sin stock
     "turbo_interval_seconds": 30,
     "turbo_duration_minutes": 180,
     "alert_repeats": 3,                # avisos de "disponible" (cada 20 s)
+    "alarm_enabled": True,             # repetir el aviso hasta que lo detengas
+    "alarm_interval_seconds": 10,
+    "alarm_max_minutes": 20,
+    "call_attempts": 3,                # llamadas de voz (si CALLMEBOT_USER está definido)
     "cart_qty": 1,                     # unidades que agrega el botón del carrito
     "sales_channel": 1,                # canal de venta de VTEX (sc) para el enlace al carrito
     "heartbeat_hours": 6,              # "sigo vivo" (0 = apagado)
@@ -142,16 +152,19 @@ def sanitize_config(raw: dict, base: dict) -> dict:
     num("turbo_interval_seconds", 20, 300, int)
     num("turbo_duration_minutes", 5, 1440, int)
     num("alert_repeats", 1, 5, int)
+    num("alarm_interval_seconds", 5, 120, int)
+    num("alarm_max_minutes", 1, 120, int)
+    num("call_attempts", 0, 5, int)
     num("cart_qty", 1, 5, int)
     num("sales_channel", 1, 99, int)
     num("heartbeat_hours", 0, 168, int)
     num("error_alert_threshold", 1, 100, int)
-    for key in ("search_terms", "required_words", "exclude_words"):
+    for key in ("search_terms", "required_words", "any_words", "exclude_words"):
         cfg[key] = as_list(cfg[key])
     if not cfg["search_terms"]:
         cfg["search_terms"] = list(DEFAULT_CONFIG["search_terms"])
-    for key in ("use_intelligent_search", "notify_published_without_stock",
-                "turbo_enabled", "window_enabled", "log_verbose", "paused"):
+    for key in ("use_intelligent_search", "use_newest", "notify_published_without_stock",
+                "turbo_enabled", "window_enabled", "alarm_enabled", "log_verbose", "paused"):
         v = cfg[key]
         cfg[key] = v.lower() in ("1", "true", "si", "sí", "on") if isinstance(v, str) else bool(v)
     return cfg
@@ -227,11 +240,18 @@ class Monitor:
         self.last_result: dict | None = None
         self.consecutive_errors = 0
         self.rotation: list = []
+        self.turbo_tick = 0
+        self.plan_failures: dict[str, int] = {}
+        self.alarm_product_id: str | None = None
         self.qlog = QueryLog(DATA_DIR / "consultas.csv", os.getenv("SHEETS_WEBHOOK_URL", ""),
                              os.getenv("SHEETS_TOKEN", ""))
         self.started_at = now()
         self.client: httpx.AsyncClient | None = None
         self.bg_tasks: set[asyncio.Task] = set()   # referencias fuertes: evita que el GC cancele tareas
+        self.alarm_active = False
+        self.alarm_stop: asyncio.Event | None = None
+        self.alarm_stop_reason: str | None = None
+        self.alarm_simulated = False
         self._load_log_tail()
 
     def spawn(self, coro) -> asyncio.Task:
@@ -287,6 +307,8 @@ class Monitor:
             "window_start": cfg["window_start"],
             "window_end": cfg["window_end"],
             "available_product": live,
+            "alarm_active": self.alarm_active,
+            "call_ready": bool(CALL_USER),
             "intervals": {"normal_min": cfg["interval_min"], "normal_max": cfg["interval_max"],
                           "window_min": cfg["window_interval_min_seconds"], "window_max": cfg["window_interval_max_seconds"],
                           "turbo": cfg["turbo_interval_seconds"]},
@@ -331,7 +353,12 @@ class Monitor:
                 plans.append((f"intelligent-search «{term}»",
                               f"{STORE}/api/io/_v/api/intelligent-search/product_search/",
                               {"query": term, "count": 20, "hideUnavailableItems": "false"}))
-        return plans
+        if self.config["use_newest"]:
+            # Los 20 productos más nuevos de la tienda: atrapa el lanzamiento aunque no se llame
+            # como esperamos o aunque la búsqueda por texto tarde en indexarlo.
+            plans.append(("novedades", f"{STORE}/api/catalog_system/pub/products/search",
+                          {"O": "OrderByReleaseDateDESC", "_from": 0, "_to": 19}))
+        return [pl for pl in plans if self.plan_failures.get(pl[0], 0) < 3]
 
     def pending_ids(self) -> list[str]:
         limit = self.config["turbo_duration_minutes"] * 60
@@ -339,10 +366,14 @@ class Monitor:
                 if not r["available"] and time.time() - r.get("first_seen_ts", 0) < limit]
 
     def next_plans(self, reason: str) -> list[tuple[str, str, dict]]:
-        # Turbo: solo pregunta por el producto ya conocido (respuesta mínima)
+        # Turbo: pregunta directo por el producto ya conocido, pero una revisión de cada dos sigue
+        # buscando normal, por si lo que apareció no era el calendario (un falso positivo no debe
+        # dejar al monitor ciego durante horas).
         if self.turbo_active() and reason == "programada":
-            return [(f"producto {pid}", f"{STORE}/api/catalog_system/pub/products/search",
-                     {"fq": f"productId:{pid}"}) for pid in self.pending_ids()]
+            self.turbo_tick += 1
+            if self.turbo_tick % 2:
+                return [(f"producto {pid}", f"{STORE}/api/catalog_system/pub/products/search",
+                         {"fq": f"productId:{pid}"}) for pid in self.pending_ids()]
         # Revisión manual, de inicio o de reanudación: todas las rutas
         if reason != "programada":
             plans = self.search_plans()
@@ -358,7 +389,8 @@ class Monitor:
         """Hace UNA consulta, devuelve los productos ya normalizados y la registra como fila de datos."""
         label, url, params = plan
         source = label.split(" ")[0]
-        term = params.get("ft") or params.get("query") or params.get("fq", "").replace("productId:", "")
+        term = params.get("ft") or params.get("query") or params.get("fq", "").replace("productId:", "") \
+            or ("más recientes" if params.get("O") else "")
         when, t0 = now(), time.perf_counter()
         status, size, found, err = None, 0, [], ""
         try:
@@ -389,8 +421,10 @@ class Monitor:
     def matches(self, name: str) -> bool:
         n = norm(name)
         req = [norm(w) for w in self.config["required_words"]]
+        alt = [norm(w) for w in self.config["any_words"]]
         exc = [norm(w) for w in self.config["exclude_words"]]
-        return all(w in n for w in req) and not any(w and w in n for w in exc)
+        hit = (bool(req) and all(w in n for w in req)) or any(w and w in n for w in alt)
+        return hit and not any(w and w in n for w in exc)
 
     async def check_once(self, reason: str):
         async with self.busy:
@@ -407,6 +441,12 @@ class Monitor:
                 except Exception as e:
                     errors.append(f"{plan[0]}: {e}")
                     self.log("warn", f"Falló la consulta {plan[0]}: {e}")
+                    code = str(e)
+                    if code.startswith("HTTP 4") and code != "HTTP 429":
+                        self.plan_failures[plan[0]] = self.plan_failures.get(plan[0], 0) + 1
+                        if self.plan_failures[plan[0]] == 3:
+                            self.rotation = []
+                            self.log("warn", f"Desactivo la fuente «{plan[0]}»: esta tienda la rechaza ({code})")
                     continue
                 for p in items:
                     if p["id"] in found:  # combina las dos fuentes
@@ -443,15 +483,39 @@ class Monitor:
             "last_seen": fmt(now()),
             "notified_available": prev.get("notified_available", False) if prev else False,
             "notified_published": prev.get("notified_published", False) if prev else False,
+            "unavailable_streak": prev.get("unavailable_streak", 0) if prev else 0,
+            "alert_ts": prev.get("alert_ts") if prev else None,
+            "alarm_ack": prev.get("alarm_ack", False) if prev else False,
         }
         if p["available"]:
+            rec["unavailable_streak"] = 0
             if not rec["notified_available"]:
                 self.log("alert", f"🎄 ¡DISPONIBLE! {p['name']} · {money(p['price'])} → {p['link']}")
+                rec["alert_ts"], rec["alarm_ack"] = time.time(), False
+                self.alarm_product_id = p["id"]
+                self.state["products"][p["id"]] = rec   # antes de avisar: si el aviso tarda, el estado ya existe
                 rec["notified_available"] = await self.notify_available(p)
+            elif (self.config["alarm_enabled"] and not rec["alarm_ack"] and not self.alarm_active
+                  and time.time() - (rec["alert_ts"] or 0) < self.config["alarm_max_minutes"] * 60):
+                # sigue disponible, nadie apagó la alarma y no está sonando (p. ej. el servidor se reinició)
+                self.log("alert", f"🚨 Reanudo la alarma: {p['name']} sigue disponible y no la has detenido")
+                self.alarm_product_id = p["id"]
+                self.start_alarm(p, "", self.buy_buttons(p))
         else:
             if rec["notified_available"]:
+                # Los dos índices de VTEX se actualizan a ritmos distintos: uno puede decir "sin stock"
+                # un momento mientras el otro aún muestra unidades. Solo se declara agotado tras
+                # SOLD_OUT_CONFIRMATIONS lecturas seguidas, para no apagar la alarma por error.
+                rec["unavailable_streak"] += 1
+                if rec["unavailable_streak"] < SOLD_OUT_CONFIRMATIONS:
+                    self.log("warn", f"Una fuente dice sin stock ({rec['unavailable_streak']}/"
+                                     f"{SOLD_OUT_CONFIRMATIONS}); confirmo antes de dar por agotado")
+                    rec["available"] = True
+                    self.state["products"][p["id"]] = rec
+                    return
                 self.log("warn", f"Se agotó: {p['name']}")
                 rec["notified_available"] = False
+                self.stop_alarm("se agotó")
                 await self.telegram(f"⚠️ <b>Se agotó</b> {html.escape(p['name'])}. Sigo vigilando por si reponen.")
             if not rec["notified_published"] and self.config["notify_published_without_stock"]:
                 self.log("alert", f"👀 Publicado SIN stock todavía: {p['name']} → {p['link']}")
@@ -476,14 +540,18 @@ class Monitor:
         return "ventana" if self.in_window() else "normal"
 
     # ---------------------------------------------------------------- Telegram
-    async def telegram(self, text: str, button: tuple[str, str] | list[tuple[str, str]] | None = None) -> bool:
+    async def telegram(self, text: str, button: tuple[str, str] | list[tuple[str, str]] | None = None,
+                       stop_button: bool = False) -> bool:
         if not (TG_TOKEN and TG_CHAT):
             self.log("error", "Telegram no está configurado (faltan TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID)")
             return False
         payload = {"chat_id": TG_CHAT, "text": text, "parse_mode": "HTML", "disable_web_page_preview": True}
         buttons = [button] if isinstance(button, tuple) else (button or [])
-        if buttons:  # un botón por fila: más fácil de tocar en el celular
-            payload["reply_markup"] = {"inline_keyboard": [[{"text": t, "url": u}] for t, u in buttons]}
+        rows = [[{"text": t, "url": u}] for t, u in buttons]  # un botón por fila: más fácil de tocar
+        if stop_button:
+            rows.append([{"text": "🔕 Ya lo vi, detener la alarma", "callback_data": "stop_alarm"}])
+        if rows:
+            payload["reply_markup"] = {"inline_keyboard": rows}
         err = None
         for attempt in range(1, 4):
             try:
@@ -523,10 +591,143 @@ class Monitor:
                 f"<b>{html.escape(p['name'])}</b>\n💰 {money(p.get('price'))}{qty}\n\n"
                 f"{tip}\n⏱ Detectado {fmt(now())}")
         buttons = self.buy_buttons(p)
-        ok = await self.telegram(text, buttons)
-        if ok and self.config["alert_repeats"] > 1:
+        alarm = self.config["alarm_enabled"]
+        if alarm:
+            text += "\n\n🚨 <b>Te seguiré escribiendo hasta que toques «Ya lo vi».</b>"
+        ok = await self.telegram(text, buttons, stop_button=alarm)
+        if alarm:
+            # aunque el primer mensaje falle (red, Telegram caído), la alarma sigue intentando cada pocos segundos
+            self.start_alarm(p, head, buttons)
+            ok = True
+        elif ok and self.config["alert_repeats"] > 1:
             self.spawn(self.repeat_alert(p, self.config["alert_repeats"] - 1, head, buttons))
+        if alarm and CALL_USER:
+            self.spawn(self.alarm_calls(p, head))
         return ok
+
+    # ---------------------------------------------------------------- alarma continua
+    def start_alarm(self, p: dict, head: str, buttons: list[tuple[str, str]]):
+        if self.alarm_active:
+            if self.alarm_simulated and not head:
+                # una detección REAL reemplaza a una alarma de prueba que siga sonando
+                self.stop_alarm("la reemplazó una detección real")
+            else:
+                return
+        self.alarm_simulated = bool(head)
+        self.alarm_active = True
+        self.alarm_stop = asyncio.Event()
+        self.log("alert", "🚨 Alarma activada: mensajes cada "
+                          f"{self.config['alarm_interval_seconds']} s hasta que la detengas")
+        self.spawn(self.alarm_loop(p, head, buttons, self.alarm_stop))
+        self.spawn(self.listen_stop(self.alarm_stop))
+        self.broadcast_status()
+
+    def stop_alarm(self, why: str, by_user: bool = False):
+        if by_user and self.alarm_product_id and not self.alarm_simulated:
+            rec = self.state["products"].get(self.alarm_product_id)
+            if rec:  # recordar que ya la viste, para no reanudarla tras un reinicio
+                rec["alarm_ack"] = True
+                save_json(STATE_FILE, self.state)
+        if self.alarm_active and self.alarm_stop and not self.alarm_stop.is_set():
+            self.alarm_stop_reason = why
+            self.alarm_stop.set()
+
+    async def alarm_loop(self, p: dict, head: str, buttons, stop: asyncio.Event):
+        cfg = self.config
+        deadline = time.monotonic() + cfg["alarm_max_minutes"] * 60
+        n = 1
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    await asyncio.wait_for(stop.wait(), cfg["alarm_interval_seconds"])
+                    break  # la detuvieron
+                except asyncio.TimeoutError:
+                    pass
+                n += 1
+                left = max(0, int((deadline - time.monotonic()) // 60))
+                await self.telegram(
+                    f"{head}{ALARM_ICONS[n % len(ALARM_ICONS)]} <b>¡DISPONIBLE! Aviso {n}</b>\n"
+                    f"{html.escape(p['name'])}\n¡Compra ya! (sigo {left} min más si no la detienes)",
+                    buttons, stop_button=True)
+            else:
+                self.alarm_stop_reason = f"se cumplieron {cfg['alarm_max_minutes']} min"
+        finally:
+            stop.set()                 # apaga también la escucha de Telegram y las llamadas
+            current = self.alarm_stop is stop   # ¿soy la alarma vigente o una reemplazada?
+            if current:
+                self.alarm_active = False
+            why = self.alarm_stop_reason or "detenida"
+            if current or why.startswith("la reemplazó"):
+                self.alarm_stop_reason = None
+            self.log("info", f"🔕 Alarma apagada ({why}) tras {n} avisos")
+            await self.telegram(f"🔕 Alarma apagada ({html.escape(why)}). ¡Suerte con la compra!")
+            self.broadcast_status()
+
+    async def listen_stop(self, stop: asyncio.Event):
+        """Escucha a Telegram solo mientras suena la alarma: el botón «Ya lo vi» o cualquier mensaje tuyo la detiene."""
+        base = f"https://api.telegram.org/bot{TG_TOKEN}"
+        offset = None
+        try:  # descarta mensajes viejos para que un "hola" de ayer no apague la alarma
+            r = await self.client.get(f"{base}/getUpdates", params={"offset": -1, "timeout": 0}, timeout=15)
+            old = r.json().get("result") or []
+            if old:
+                offset = old[-1]["update_id"] + 1
+        except Exception as e:
+            self.log("warn", f"No pude leer Telegram para el botón de detener: {e}")
+        while not stop.is_set():
+            try:
+                params = {"timeout": 10, "allowed_updates": json.dumps(["message", "callback_query"])}
+                if offset is not None:
+                    params["offset"] = offset
+                r = await self.client.get(f"{base}/getUpdates", params=params, timeout=25)
+                data = r.json()
+                if not data.get("ok"):  # p. ej. 409 si otra escucha sigue activa: no martillar a Telegram
+                    self.log("debug", f"getUpdates: {data.get('description')}")
+                    await asyncio.sleep(2)
+                    continue
+                for u in data.get("result") or []:
+                    offset = u["update_id"] + 1
+                    cb, msg = u.get("callback_query"), u.get("message")
+                    chat = str(((cb or {}).get("message") or msg or {}).get("chat", {}).get("id", ""))
+                    if chat != TG_CHAT:
+                        continue
+                    if cb:
+                        await self.client.post(f"{base}/answerCallbackQuery", timeout=10,
+                                               json={"callback_query_id": cb["id"], "text": "Alarma detenida 🔕"})
+                    if (cb and cb.get("data") == "stop_alarm") or msg:
+                        self.stop_alarm("la detuviste desde Telegram", by_user=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                self.log("debug", f"Escucha de Telegram: {e!r}")
+                await asyncio.sleep(3)
+        if offset is not None:  # confirma lo leído
+            try:
+                await self.client.get(f"{base}/getUpdates", params={"offset": offset, "timeout": 0}, timeout=10)
+            except Exception:
+                pass
+
+    async def alarm_calls(self, p: dict, head: str):
+        """Llamada de voz por Telegram (CallMeBot). Suena como una llamada entrante, no como un mensaje."""
+        sim = "Simulación. " if head else ""
+        text = f"{sim}El calendario de adviento de Trendy está disponible. Abre Telegram y compra ya."
+        stop = self.alarm_stop or asyncio.Event()
+        for i in range(self.config["call_attempts"]):
+            if i:
+                try:
+                    await asyncio.wait_for(stop.wait(), 90)
+                    return
+                except asyncio.TimeoutError:
+                    pass
+            if i and not self.alarm_active:
+                return
+            try:
+                r = await self.client.get("https://api.callmebot.com/start.php", timeout=60, params={
+                    "user": CALL_USER, "text": text, "lang": CALL_LANG, "rpt": 3, "cc": "missed"})
+                self.log("alert" if r.status_code == 200 else "warn",
+                         f"📞 Llamada {i + 1} solicitada a CallMeBot (HTTP {r.status_code})")
+            except Exception as e:
+                self.log("warn", f"📞 No se pudo pedir la llamada: {e}")
 
     async def repeat_alert(self, p: dict, times: int, head: str, buttons: list[tuple[str, str]]):
         """Repite el aviso para que el celular vuelva a sonar por si no viste el primero."""
@@ -713,6 +914,13 @@ async def toggle_pause():
     mon.log("info", "Monitor en PAUSA" if mon.config["paused"] else "Monitor reanudado")
     mon.poke("reschedule" if mon.config["paused"] else "reanudación")
     return {"paused": mon.config["paused"]}
+
+
+@app.post("/api/alarm/stop", dependencies=[Depends(auth)])
+async def alarm_stop():
+    was = mon.alarm_active
+    mon.stop_alarm("la detuviste desde el panel", by_user=True)
+    return {"ok": True, "was_active": was}
 
 
 @app.post("/api/check-now", dependencies=[Depends(auth)])
