@@ -749,9 +749,13 @@ class Monitor:
         for url in ("https://api.callmebot.com/start.php", "http://api.callmebot.com/start.php"):
             try:
                 r = await self.client.get(url, params=params, timeout=60)
-                body = " ".join(re.sub(r"<[^>]+>", " ", r.text).split())[:220]
-                bad = r.status_code != 200 or any(w in body.lower() for w in
-                                                  ("error", "not authorized", "authorize", "invalid", "not found", "denied"))
+                # CallMeBot responde una página HTML con scripts de analítica: se quitan para leer su mensaje real
+                page = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", " ", r.text)
+                body = " ".join(re.sub(r"<[^>]+>", " ", page).split())[:600]
+                low = body.lower()
+                bad = r.status_code != 200 or any(w in low for w in (
+                    "error", "not authorized", "authorize", "not authoriz", "invalid", "not found", "denied",
+                    "/start", "please", "blocked", "limit"))
                 self.log("warn" if bad else "alert",
                          f"📞 {label} a {CALL_USER}: CallMeBot respondió (HTTP {r.status_code}) «{body or 'sin texto'}»")
                 return not bad, body
