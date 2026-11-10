@@ -46,6 +46,7 @@ def _call_user(raw: str) -> str:
 
 CALL_USER = _call_user(os.getenv("CALLMEBOT_USER", ""))   # tu @usuario de Telegram (opcional)
 CALL_LANG = os.getenv("CALLMEBOT_LANG", "es-ES-Standard-A").strip()
+MAX_FLOOD_RETRIES = 30      # ~10 min de reintentos si CallMeBot está saturado
 SOLD_OUT_CONFIRMATIONS = 3   # lecturas "sin stock" seguidas antes de dar por agotado
 ALARM_ICONS = ["🚨", "🎄", "🔔", "⏰", "🛒", "‼️"]
 PANEL_USER = os.getenv("PANEL_USER", "admin")
@@ -253,6 +254,7 @@ class Monitor:
         self.rotation: list = []
         self.turbo_tick = 0
         self.plan_failures: dict[str, int] = {}
+        self.flood_retry_seconds, self.call_gap_seconds = 20, 90
         self.alarm_product_id: str | None = None
         self.qlog = QueryLog(DATA_DIR / "consultas.csv", os.getenv("SHEETS_WEBHOOK_URL", ""),
                              os.getenv("SHEETS_TOKEN", ""))
@@ -727,16 +729,25 @@ class Monitor:
         """Llamada de voz por Telegram (CallMeBot). Suena como una llamada entrante, no como un mensaje."""
         sim = "Simulación. " if head else ""
         text = f"{sim}El calendario de adviento de Trendy está disponible. Abre Telegram y compra ya."
-        for i in range(self.config["call_attempts"]):
-            if i:
-                try:
-                    await asyncio.wait_for(stop.wait(), 90)
+        done, floods = 0, 0
+        while done < self.config["call_attempts"] and not stop.is_set():
+            ok, info = await self.call_once(text, f"Llamada {done + 1}")
+            if "flood" in (info or "").lower():
+                # CallMeBot gratuito está saturado: no cuenta como intento, se reintenta pronto
+                floods += 1
+                if floods > MAX_FLOOD_RETRIES:  # evita que CallMeBot bloquee tu usuario por exceso de pedidos
+                    self.log("warn", "📞 CallMeBot sigue saturado; dejo de pedir llamadas. Los mensajes siguen.")
                     return
-                except asyncio.TimeoutError:
-                    pass
-            if stop.is_set():
+                self.log("warn", f"📞 CallMeBot está saturado (FLOOD #{floods}); reintento en 20 s")
+                wait = self.flood_retry_seconds
+            else:
+                done += 1
+                wait = self.call_gap_seconds
+            try:
+                await asyncio.wait_for(stop.wait(), wait)
                 return
-            await self.call_once(text, f"Llamada {i + 1}")
+            except asyncio.TimeoutError:
+                pass
 
     async def call_once(self, text: str, label: str = "Llamada") -> tuple[bool, str]:
         """Pide una llamada a CallMeBot y deja en Actividad lo que respondió (su respuesta explica los errores)."""
@@ -967,10 +978,14 @@ async def check_now():
 
 @app.post("/api/test-call", dependencies=[Depends(auth)])
 async def test_call():
-    mon.log("test", "📞 Probando la llamada de voz…")
-    ok, info = await mon.call_once("Prueba del monitor de Trendy. Si escuchas esto, las llamadas funcionan.",
-                                   "Llamada de prueba")
-    return {"ok": ok, "error": None if ok else info}
+    if not CALL_USER:
+        mon.log("error", "📞 Llamada de prueba: falta la variable CALLMEBOT_USER en Railway")
+        return {"ok": False, "error": "falta la variable CALLMEBOT_USER en Railway"}
+    mon.log("test", f"📞 Pidiendo una llamada de prueba a {CALL_USER}… (CallMeBot puede tardar hasta 1–2 min)")
+    # en segundo plano: CallMeBot deja la conexión abierta mientras llama y Railway cortaría la petición (502)
+    mon.spawn(mon.call_once("Prueba del monitor de Trendy. Si escuchas esto, las llamadas funcionan.",
+                            "Llamada de prueba"))
+    return {"ok": True, "queued": True}
 
 
 @app.post("/api/test-telegram", dependencies=[Depends(auth)])

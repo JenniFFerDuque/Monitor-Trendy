@@ -630,7 +630,7 @@ function action(id, path, ok, fail){
   };
 }
 action("#bTest", "/api/test-telegram", () => "Mensaje de prueba enviado a Telegram", "Telegram no recibió la prueba");
-action("#bCall", "/api/test-call", () => "Llamada pedida: debería entrar en unos segundos", "La llamada no salió");
+action("#bCall", "/api/test-call", () => "Llamada pedida. Puede tardar 1–2 min; el resultado sale en Actividad", "La llamada no salió");
 action("#bSim", "/api/simulate", () => "Alerta simulada enviada a Telegram", "La alerta simulada no llegó");
 action("#bNow", "/api/check-now", () => "Revisando la tienda…", "No se pudo revisar");
 action("#bPause", "/api/pause", r => r.paused ? "Monitor en pausa: no te avisará hasta que lo reanudes" : "Monitor reanudado", "No se pudo cambiar");
