@@ -9,6 +9,7 @@ import html
 import json
 import os
 import random
+import re
 import secrets
 import time
 import unicodedata
@@ -35,7 +36,15 @@ STATIC = Path(__file__).parent / "static"
 
 TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TG_CHAT = os.getenv("TELEGRAM_CHAT_ID", "").strip()
-CALL_USER = os.getenv("CALLMEBOT_USER", "").strip()        # tu @usuario de Telegram (opcional)
+def _call_user(raw: str) -> str:
+    """CallMeBot exige @usuario o +teléfono: corrige "jenniffer" o "t.me/jenniffer" sin @."""
+    u = raw.strip().replace("https://", "").replace("t.me/", "").strip("/ ")
+    if u and not u.startswith(("@", "+")):
+        u = "@" + u
+    return u
+
+
+CALL_USER = _call_user(os.getenv("CALLMEBOT_USER", ""))   # tu @usuario de Telegram (opcional)
 CALL_LANG = os.getenv("CALLMEBOT_LANG", "es-ES-Standard-A").strip()
 SOLD_OUT_CONFIRMATIONS = 3   # lecturas "sin stock" seguidas antes de dar por agotado
 ALARM_ICONS = ["🚨", "🎄", "🔔", "⏰", "🛒", "‼️"]
@@ -727,13 +736,29 @@ class Monitor:
                     pass
             if stop.is_set():
                 return
+            await self.call_once(text, f"Llamada {i + 1}")
+
+    async def call_once(self, text: str, label: str = "Llamada") -> tuple[bool, str]:
+        """Pide una llamada a CallMeBot y deja en Actividad lo que respondió (su respuesta explica los errores)."""
+        if not CALL_USER:
+            msg = "falta la variable CALLMEBOT_USER en Railway"
+            self.log("error", f"📞 {label}: {msg}")
+            return False, msg
+        params = {"user": CALL_USER, "text": text[:250], "lang": CALL_LANG, "rpt": 3, "cc": "missed"}
+        last = ""
+        for url in ("https://api.callmebot.com/start.php", "http://api.callmebot.com/start.php"):
             try:
-                r = await self.client.get("https://api.callmebot.com/start.php", timeout=60, params={
-                    "user": CALL_USER, "text": text, "lang": CALL_LANG, "rpt": 3, "cc": "missed"})
-                self.log("alert" if r.status_code == 200 else "warn",
-                         f"📞 Llamada {i + 1} solicitada a CallMeBot (HTTP {r.status_code})")
+                r = await self.client.get(url, params=params, timeout=60)
+                body = " ".join(re.sub(r"<[^>]+>", " ", r.text).split())[:220]
+                bad = r.status_code != 200 or any(w in body.lower() for w in
+                                                  ("error", "not authorized", "authorize", "invalid", "not found", "denied"))
+                self.log("warn" if bad else "alert",
+                         f"📞 {label} a {CALL_USER}: CallMeBot respondió (HTTP {r.status_code}) «{body or 'sin texto'}»")
+                return not bad, body
             except Exception as e:
-                self.log("warn", f"📞 No se pudo pedir la llamada: {e}")
+                last = str(e) or e.__class__.__name__
+        self.log("error", f"📞 {label}: no se pudo contactar a CallMeBot ({last})")
+        return False, last
 
     async def repeat_alert(self, p: dict, times: int, head: str, buttons: list[tuple[str, str]]):
         """Repite el aviso para que el celular vuelva a sonar por si no viste el primero."""
@@ -934,6 +959,14 @@ async def check_now():
     mon.log("info", "Revisión manual solicitada desde el panel")
     mon.poke("manual")
     return {"ok": True}
+
+
+@app.post("/api/test-call", dependencies=[Depends(auth)])
+async def test_call():
+    mon.log("test", "📞 Probando la llamada de voz…")
+    ok, info = await mon.call_once("Prueba del monitor de Trendy. Si escuchas esto, las llamadas funcionan.",
+                                   "Llamada de prueba")
+    return {"ok": ok, "error": None if ok else info}
 
 
 @app.post("/api/test-telegram", dependencies=[Depends(auth)])
