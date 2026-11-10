@@ -78,8 +78,9 @@ DEFAULT_CONFIG = {
     "alert_repeats": 3,                # avisos de "disponible" (cada 20 s)
     "alarm_enabled": True,             # repetir el aviso hasta que lo detengas
     "alarm_interval_seconds": 10,
-    "alarm_max_minutes": 20,
-    "call_attempts": 3,                # llamadas de voz (si CALLMEBOT_USER está definido)
+    "alarm_max_minutes": 60,
+    "call_after_notifications": 3,     # la llamada empieza después de este aviso
+    "call_attempts": 5,                # llamadas de voz, una cada ~90 s (necesita CALLMEBOT_USER)
     "cart_qty": 1,                     # unidades que agrega el botón del carrito
     "sales_channel": 1,                # canal de venta de VTEX (sc) para el enlace al carrito
     "heartbeat_hours": 6,              # "sigo vivo" (0 = apagado)
@@ -154,7 +155,8 @@ def sanitize_config(raw: dict, base: dict) -> dict:
     num("alert_repeats", 1, 5, int)
     num("alarm_interval_seconds", 5, 120, int)
     num("alarm_max_minutes", 1, 120, int)
-    num("call_attempts", 0, 5, int)
+    num("call_attempts", 0, 10, int)
+    num("call_after_notifications", 1, 10, int)
     num("cart_qty", 1, 5, int)
     num("sales_channel", 1, 99, int)
     num("heartbeat_hours", 0, 168, int)
@@ -601,8 +603,6 @@ class Monitor:
             ok = True
         elif ok and self.config["alert_repeats"] > 1:
             self.spawn(self.repeat_alert(p, self.config["alert_repeats"] - 1, head, buttons))
-        if alarm and CALL_USER:
-            self.spawn(self.alarm_calls(p, head))
         return ok
 
     # ---------------------------------------------------------------- alarma continua
@@ -636,6 +636,8 @@ class Monitor:
         cfg = self.config
         deadline = time.monotonic() + cfg["alarm_max_minutes"] * 60
         n = 1
+        if cfg["call_after_notifications"] <= 1 and cfg["call_attempts"] and CALL_USER:
+            self.spawn(self.alarm_calls(p, head, stop))
         try:
             while time.monotonic() < deadline:
                 try:
@@ -649,6 +651,11 @@ class Monitor:
                     f"{head}{ALARM_ICONS[n % len(ALARM_ICONS)]} <b>¡DISPONIBLE! Aviso {n}</b>\n"
                     f"{html.escape(p['name'])}\n¡Compra ya! (sigo {left} min más si no la detienes)",
                     buttons, stop_button=True)
+                if n == cfg["call_after_notifications"] and cfg["call_attempts"]:
+                    if CALL_USER:   # las llamadas corren en paralelo: los mensajes NO se detienen
+                        self.spawn(self.alarm_calls(p, head, stop))
+                    else:
+                        self.log("warn", "📞 Tocaba llamarte, pero falta CALLMEBOT_USER en Railway")
             else:
                 self.alarm_stop_reason = f"se cumplieron {cfg['alarm_max_minutes']} min"
         finally:
@@ -707,11 +714,10 @@ class Monitor:
             except Exception:
                 pass
 
-    async def alarm_calls(self, p: dict, head: str):
+    async def alarm_calls(self, p: dict, head: str, stop: asyncio.Event):
         """Llamada de voz por Telegram (CallMeBot). Suena como una llamada entrante, no como un mensaje."""
         sim = "Simulación. " if head else ""
         text = f"{sim}El calendario de adviento de Trendy está disponible. Abre Telegram y compra ya."
-        stop = self.alarm_stop or asyncio.Event()
         for i in range(self.config["call_attempts"]):
             if i:
                 try:
@@ -719,7 +725,7 @@ class Monitor:
                     return
                 except asyncio.TimeoutError:
                     pass
-            if i and not self.alarm_active:
+            if stop.is_set():
                 return
             try:
                 r = await self.client.get("https://api.callmebot.com/start.php", timeout=60, params={

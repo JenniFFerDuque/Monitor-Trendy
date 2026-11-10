@@ -272,7 +272,8 @@ summary{cursor:pointer;font-weight:600;color:var(--mauve);margin-bottom:12px}
           <label class="f">Mensaje de “sigo vivo” cada (horas, 0 = nunca)<input type="number" name="heartbeat_hours" min="0" max="168" inputmode="numeric"></label>
           <label class="f">Alarma: un mensaje cada (segundos)<input type="number" name="alarm_interval_seconds" min="5" max="120" inputmode="numeric"></label>
           <label class="f">Alarma: máximo durante (minutos)<input type="number" name="alarm_max_minutes" min="1" max="120" inputmode="numeric"></label>
-          <label class="f">Llamadas de voz por Telegram (0–5)<input type="number" name="call_attempts" min="0" max="5" inputmode="numeric"></label>
+          <label class="f">Llamarme después del aviso número (1–10)<input type="number" name="call_after_notifications" min="1" max="10" inputmode="numeric"></label>
+          <label class="f">Llamadas de voz, una cada 90 s (0–10)<input type="number" name="call_attempts" min="0" max="10" inputmode="numeric"></label>
           <label class="f">Avisos si la alarma está apagada (1–5)<input type="number" name="alert_repeats" min="1" max="5" inputmode="numeric"></label>
           <label class="f">Unidades que agrega el botón del carrito (1–5)<input type="number" name="cart_qty" min="1" max="5" inputmode="numeric"></label>
         </div>
@@ -630,7 +631,13 @@ function action(id, path, ok, fail){
 action("#bTest", "/api/test-telegram", () => "Mensaje de prueba enviado a Telegram", "Telegram no recibió la prueba");
 action("#bSim", "/api/simulate", () => "Alerta simulada enviada a Telegram", "La alerta simulada no llegó");
 action("#bNow", "/api/check-now", () => "Revisando la tienda…", "No se pudo revisar");
-action("#bPause", "/api/pause", r => r.paused ? "Monitor en pausa" : "Monitor reanudado", "No se pudo cambiar");
+action("#bPause", "/api/pause", r => r.paused ? "Monitor en pausa: no te avisará hasta que lo reanudes" : "Monitor reanudado", "No se pudo cambiar");
+// Pausar deja de vigilar la tienda: se pide confirmación para no tocarlo por error
+$("#bPause").addEventListener("click", ev => {
+  if(S && !S.paused && !confirm("¿Pausar el monitor?\n\nMientras esté en pausa NO revisa la tienda y NO te avisará si sale el calendario.")){
+    ev.stopImmediatePropagation();
+  }
+}, true);
 action("#bStopAlarm", "/api/alarm/stop", () => "Alarma detenida", "No se pudo detener");
 action("#bSync", "/api/queries/sync", r => `${fmtNum(r.sent)} filas enviadas a Google Sheets`, "Google Sheets no recibió los datos");
 $("#bLogDl").onclick = () => { location.href = "/api/logs/download"; };
